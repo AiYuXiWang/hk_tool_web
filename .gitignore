@@ -70,3 +70,27 @@ Thumbs.db
 
 # Chrome DevTools MCP
 chrome-devtools-mcp/__pycache__/
+
+# Project specific
+.venv/
+.pytest_cache/
+.vite/
+.trae/
+.qoder/
+.codebuddy/
+
+# Test files and reports
+test_*.py
+*_test_report.json
+diagnostic*.html
+diagnostic*.js
+
+# Validation and debug scripts
+check_*.py
+debug_*.py
+print_*.py
+auto_test_*.py
+generate_*.py
+
+# Package lock files (keep only one)
+package-lock.json

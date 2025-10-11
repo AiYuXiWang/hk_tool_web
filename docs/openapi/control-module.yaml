@@ -1,0 +1,128 @@
+openapi: 3.0.3
+info:
+  title: 环控节能平台 - 设备点位运维与批量控制模块
+  version: 1.0.0
+  description: >
+    后端封装环控节能平台API，提供点位实时查询与批量写值控制能力。
+    注意：固定token由服务端配置注入，不对前端暴露。
+servers:
+  - url: http://localhost:8000
+    description: 本地开发
+tags:
+  - name: PointControl
+    description: 点位实时查询与批量控制
+security:
+  - platformToken: []
+paths:
+  /control/points/real-time:
+    get:
+      tags: [PointControl]
+      summary: 点位实时值查询
+      description: 通过 object_code + data_code 获取点位实时信息；服务端调用环控平台查询接口
+      parameters:
+        - name: object_code
+          in: query
+          schema: { type: string }
+          required: true
+          description: 设备编码
+        - name: data_code
+          in: query
+          schema: { type: string }
+          required: true
+          description: 点位编码
+      responses:
+        "200":
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RealTimePointValue"
+        "400":
+          description: 参数错误
+        "502":
+          description: 下游平台错误或超时
+  /control/points/write:
+    post:
+      tags: [PointControl]
+      summary: 批量写值控制
+      description: 唯一入口，由服务层 DeviceControlService 实现；前端仅调用此路径。
+      description: 批量对点位写入设定值，支持并发执行与部分失败不中断
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              minItems: 1
+              items:
+                $ref: "#/components/schemas/WritePointCommand"
+      responses:
+        "200":
+          description: 执行结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BatchWriteResult"
+        "400":
+          description: 参数或校验失败
+        "502":
+          description: 下游平台错误或超时
+components:
+  securitySchemes:
+    platformToken:
+      type: apiKey
+      in: header
+      name: token
+      description: 平台固定token由服务端配置，前端不直接传递明文
+  schemas:
+    RealTimePointValue:
+      type: object
+      properties:
+        object_code: { type: string }
+        data_code: { type: string }
+        value: { oneOf: [{type: string},{type: number},{type: boolean}] }
+        unit: { type: string, nullable: true }
+        ts: { type: string, format: date-time }
+        raw: { type: object, additionalProperties: true, nullable: true }
+    WritePointCommand:
+      type: object
+      required: [point_key, data_source, control_value]
+      properties:
+        point_key:
+          type: string
+          example: "shuanfa:ChillerOutTempSetMax"
+        data_source:
+          type: integer
+          enum: [1,2,3]
+          example: 3
+        control_value:
+          oneOf:
+            - { type: string }
+            - { type: number }
+            - { type: boolean }
+          example: "12"
+        validate:
+          type: object
+          description: 可选的服务端侧校验规则覆盖（范围/类型）
+          properties:
+            type: { type: string, enum: [int,float,bool,string] }
+            min: { type: number }
+            max: { type: number }
+    BatchWriteResult:
+      type: object
+      properties:
+        total: { type: integer }
+        success: { type: integer }
+        failed: { type: integer }
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              point_key: { type: string }
+              status: { type: string, enum: [ok, failed] }
+              message: { type: string, nullable: true }
+              duration_ms: { type: integer, nullable: true }
+              before: { oneOf: [{type: string},{type: number},{type: boolean}], nullable: true }
+              after: { oneOf: [{type: string},{type: number},{type: boolean}], nullable: true }
+              retries: { type: integer, nullable: true }

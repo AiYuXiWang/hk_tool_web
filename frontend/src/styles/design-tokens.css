@@ -1,0 +1,261 @@
+/**
+ * 设计令牌 (Design Tokens)
+ * 定义整个应用的设计系统基础变量
+ */
+
+:root {
+  /* ==================== 色彩系统 ==================== */
+  
+  /* 主色调 */
+  --color-primary: #1890FF;
+  --color-primary-light: #40A9FF;
+  --color-primary-lighter: #69C0FF;
+  --color-primary-dark: #096DD9;
+  --color-primary-darker: #0050B3;
+  
+  /* 功能色彩 */
+  --color-success: #52C41A;
+  --color-success-light: #73D13D;
+  --color-success-dark: #389E0D;
+  
+  --color-warning: #FAAD14;
+  --color-warning-light: #FFC53D;
+  --color-warning-dark: #D48806;
+  
+  --color-error: #FF4D4F;
+  --color-error-light: #FF7875;
+  --color-error-dark: #CF1322;
+  
+  --color-info: #1890FF;
+  --color-info-light: #40A9FF;
+  --color-info-dark: #096DD9;
+  
+  /* 中性色彩 */
+  --color-text-primary: #1a1a1a;
+  --color-text-secondary: #4c4c4c;
+  --color-text-tertiary: #8C8C8C;
+  --color-text-quaternary: #BFBFBF;
+  --color-text-disabled: #D9D9D9;
+  
+  --color-border-primary: #D9D9D9;
+  --color-border-secondary: #F0F0F0;
+  --color-border-light: #FAFAFA;
+  
+  --color-background-primary: #FFFFFF;
+  --color-background-secondary: #FAFAFA;
+  --color-background-tertiary: #F5F5F5;
+  --color-background-quaternary: #F0F0F0;
+  
+  /* 专业化配色 */
+  --color-tech-blue: #1890FF;
+  --color-industrial-green: #52C41A;
+  --color-system-orange: #FAAD14;
+  --color-alert-red: #FF4D4F;
+  
+  /* ==================== 字体系统 ==================== */
+  
+  /* 字体族 */
+  --font-family-base: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+  --font-family-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+  
+  /* 字体大小 */
+  --font-size-xs: 11px;
+  --font-size-sm: 12px;
+  --font-size-base: 14px;
+  --font-size-lg: 16px;
+  --font-size-xl: 20px;
+  --font-size-xxl: 24px;
+  
+  /* 行高 */
+  --line-height-xs: 16px;
+  --line-height-sm: 20px;
+  --line-height-base: 22px;
+  --line-height-lg: 24px;
+  --line-height-xl: 28px;
+  --line-height-xxl: 32px;
+  
+  /* 字重 */
+  --font-weight-light: 300;
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  
+  /* ==================== 间距系统 ==================== */
+  
+  /* 基础间距 (8px 网格系统) */
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 16px;
+  --spacing-lg: 24px;
+  --spacing-xl: 32px;
+  --spacing-xxl: 48px;
+  
+  /* 组件内间距 */
+  --spacing-component-xs: 4px;
+  --spacing-component-sm: 8px;
+  --spacing-component-md: 12px;
+  --spacing-component-lg: 16px;
+  
+  /* 布局间距 */
+  --spacing-layout-sm: 16px;
+  --spacing-layout-md: 24px;
+  --spacing-layout-lg: 32px;
+  --spacing-layout-xl: 48px;
+  
+  /* ==================== 阴影系统 ==================== */
+  
+  --shadow-light: 0 2px 4px rgba(0, 0, 0, 0.1);
+  --shadow-base: 0 4px 12px rgba(0, 0, 0, 0.1);
+  --shadow-medium: 0 8px 24px rgba(0, 0, 0, 0.12);
+  --shadow-heavy: 0 12px 32px rgba(0, 0, 0, 0.15);
+  
+  /* 悬浮阴影 */
+  --shadow-hover: 0 6px 16px rgba(0, 0, 0, 0.12);
+  --shadow-active: 0 2px 8px rgba(0, 0, 0, 0.15);
+  
+  /* ==================== 圆角系统 ==================== */
+  
+  --border-radius-sm: 2px;
+  --border-radius-base: 4px;
+  --border-radius-md: 6px;
+  --border-radius-lg: 8px;
+  --border-radius-xl: 12px;
+  --border-radius-round: 50%;
+  
+  /* ==================== 尺寸系统 ==================== */
+  
+  /* 组件高度 */
+  --height-sm: 24px;
+  --height-base: 32px;
+  --height-lg: 40px;
+  --height-xl: 48px;
+  
+  /* 布局尺寸 */
+  --header-height: 64px;
+  --sidebar-width: 280px;
+  --sidebar-collapsed-width: 64px;
+  --tab-height: 48px;
+  
+  /* ==================== 动画系统 ==================== */
+  
+  /* 动画时长 */
+  --duration-fast: 0.1s;
+  --duration-base: 0.2s;
+  --duration-slow: 0.3s;
+  --duration-slower: 0.5s;
+  
+  /* 动画曲线 */
+  --ease-out: cubic-bezier(0.215, 0.61, 0.355, 1);
+  --ease-in: cubic-bezier(0.55, 0.055, 0.675, 0.19);
+  --ease-in-out: cubic-bezier(0.645, 0.045, 0.355, 1);
+  --ease-out-back: cubic-bezier(0.12, 0.4, 0.29, 1.46);
+  
+  /* ==================== Z-index 层级 ==================== */
+  
+  --z-index-dropdown: 1000;
+  --z-index-sticky: 1020;
+  --z-index-fixed: 1030;
+  --z-index-modal-backdrop: 1040;
+  --z-index-modal: 1050;
+  --z-index-popover: 1060;
+  --z-index-tooltip: 1070;
+  --z-index-toast: 1080;
+  
+  /* ==================== 响应式断点 ==================== */
+  
+  --breakpoint-xs: 480px;
+  --breakpoint-sm: 768px;
+  --breakpoint-md: 1024px;
+  --breakpoint-lg: 1440px;
+  --breakpoint-xl: 1920px;
+}
+
+/* ==================== 语义化颜色映射 ==================== */
+
+:root {
+  /* 状态颜色语义化 */
+  --status-online: var(--color-success);
+  --status-offline: var(--color-error);
+  --status-warning: var(--color-warning);
+  --status-unknown: var(--color-text-tertiary);
+  
+  /* 业务场景色彩 */
+  --device-normal: var(--color-success);
+  --device-alarm: var(--color-error);
+  --device-warning: var(--color-warning);
+  --device-offline: var(--color-text-tertiary);
+  
+  /* 操作结果色彩 */
+  --operation-success: var(--color-success);
+  --operation-failed: var(--color-error);
+  --operation-pending: var(--color-warning);
+  --operation-processing: var(--color-info);
+}
+
+/* ==================== 深色主题支持 ==================== */
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* 深色主题颜色重定义 */
+    --color-background-primary: #141414;
+    --color-background-secondary: #1f1f1f;
+    --color-background-tertiary: #262626;
+    --color-background-quaternary: #2f2f2f;
+    
+    --color-text-primary: #ffffff;
+    --color-text-secondary: #d9d9d9;
+    --color-text-tertiary: #bfbfbf;
+    --color-text-quaternary: #8c8c8c;
+    
+    --color-border-primary: #434343;
+    --color-border-secondary: #303030;
+    --color-border-light: #262626;
+    
+    /* 阴影在深色主题下的调整 */
+    --shadow-light: 0 2px 4px rgba(0, 0, 0, 0.3);
+    --shadow-base: 0 4px 12px rgba(0, 0, 0, 0.3);
+    --shadow-medium: 0 8px 24px rgba(0, 0, 0, 0.4);
+    --shadow-heavy: 0 12px 32px rgba(0, 0, 0, 0.5);
+  }
+}
+
+/* ==================== 手动深色主题切换（通过 html.theme-dark 类） ==================== */
+.theme-dark {
+  --color-background-primary: #141414;
+  --color-background-secondary: #1f1f1f;
+  --color-background-tertiary: #262626;
+  --color-background-quaternary: #2f2f2f;
+
+  --color-text-primary: #ffffff;
+  --color-text-secondary: #d9d9d9;
+  --color-text-tertiary: #bfbfbf;
+  --color-text-quaternary: #8c8c8c;
+
+  --color-border-primary: #434343;
+  --color-border-secondary: #303030;
+  --color-border-light: #262626;
+
+  --shadow-light: 0 2px 4px rgba(0, 0, 0, 0.3);
+  --shadow-base: 0 4px 12px rgba(0, 0, 0, 0.3);
+  --shadow-medium: 0 8px 24px rgba(0, 0, 0, 0.4);
+  --shadow-heavy: 0 12px 32px rgba(0, 0, 0, 0.5);
+}
+
+/* ==================== 打印样式优化 ==================== */
+
+@media print {
+  :root {
+    /* 打印时使用高对比度颜色 */
+    --color-primary: #000000;
+    --color-text-primary: #000000;
+    --color-text-secondary: #333333;
+    --color-background-primary: #ffffff;
+    
+    /* 移除阴影以节省墨水 */
+    --shadow-light: none;
+    --shadow-base: none;
+    --shadow-medium: none;
+    --shadow-heavy: none;
+  }
+}
