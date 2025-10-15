@@ -39,6 +39,14 @@
             </span>
           </template>
         </el-tab-pane>
+        <el-tab-pane name="cockpit">
+          <template #label>
+            <span class="tab-label">
+              <el-icon><DataAnalysis /></el-icon>
+              能源驾驶舱
+            </span>
+          </template>
+        </el-tab-pane>
         <el-tab-pane name="export">
           <template #label>
             <span class="tab-label">
@@ -401,6 +409,11 @@
       <div v-show="activeTab === 'export'" class="export-page">
         <DataExport />
       </div>
+
+      <!-- 能源驾驶舱页面 -->
+      <div v-show="activeTab === 'cockpit'" class="export-page">
+        <EnergyCockpit />
+      </div>
     </main>
 
     <!-- 批量写值对话框 -->
@@ -507,10 +520,11 @@ import {
   Delete,
   Document
 } from '@element-plus/icons-vue'
-import { fetchRealtimeValue, batchWritePoints, fetchDeviceTree, getSeverityColor, fetchLineConfigs, exportElectricityData, exportSensorData } from './api/control'
+import { fetchRealtimeValue, batchWritePoints, fetchDeviceTree, getSeverityColor, fetchLineConfigs, exportElectricityData, exportSensorData, fetchDefaultPoints, setStationIp } from './api/control'
 import DataExport from './views/DataExport.vue'
+import EnergyCockpit from './views/EnergyCockpit.vue'
 
-const activeTab = ref('device')
+const activeTab = ref('cockpit')
 const operatorId = ref('web-admin')
 const isDarkTheme = ref(false)
 const sidebarCollapsed = ref(false)
@@ -530,6 +544,8 @@ const tableHeight = computed(() => Math.round(window.innerHeight * 0.4))
 // 操作日志与批量进度
 const operationLogs = ref([])
 const batchProgress = ref({ total: 0, done: 0, success: 0, failed: 0 })
+// 点位数据源缓存（key: object_code|data_code -> 1|2|3）
+const dataSourceCache = ref<Record<string, 1 | 2 | 3>>({})
 
 // 批量写值相关状态
 const batchForm = ref({
@@ -651,11 +667,15 @@ function onLineChange() {
   const stations = lineConfigs.value[selectedLine.value] || []
   const firstStation = stations[0]
   selectedStation.value = firstStation && firstStation.station_ip ? firstStation.station_ip : ''
+  // 切换线路时同步设置站点请求头
+  setStationIp(selectedStation.value || '')
   loadDeviceTree(false)
 }
 
 function onStationChange() {
   if (selectedStation.value) {
+    // 站点切换时更新请求头，后续查询与写值使用对应站点
+    setStationIp(selectedStation.value)
     loadDeviceTree(false)
   }
 }
@@ -720,6 +740,39 @@ async function fetchRealtime() {
   } finally {
     loadingQuery.value = false
   }
+}
+
+// 查询并解析点位的 data_source，优先使用缓存与已知元信息
+async function resolveDataSource(oc: string, dc: string): Promise<1 | 2 | 3 | undefined> {
+  const k = oc + '|' + dc
+  // 1) 元信息中可能已包含 data_source（例如设备树或默认点位返回）
+  const meta = getMeta(oc, dc)
+  const metaDs = (meta && (meta as any).data_source) as 1 | 2 | 3 | undefined
+  if (metaDs === 1 || metaDs === 2 || metaDs === 3) {
+    dataSourceCache.value[k] = metaDs
+    return metaDs
+  }
+  // 2) 本地缓存
+  const cached = dataSourceCache.value[k]
+  if (cached === 1 || cached === 2 || cached === 3) return cached
+  // 3) 远程查询默认点位元数据并匹配 data_source
+  try {
+    // 确保站点头已设置（在 onStationChange/onLineChange 中也会设置）
+    if (selectedStation.value) setStationIp(selectedStation.value)
+    const resp = await fetchDefaultPoints([oc])
+    const items = Array.isArray((resp as any)?.items) ? (resp as any).items : (Array.isArray(resp) ? (resp as any) : [])
+    const found = items.find((it: any) => (it?.object_code === oc && it?.data_code === dc) || it?.point_key === `${oc}:${dc}`)
+    const ds: 1 | 2 | 3 | undefined = found?.data_source as any
+    if (ds === 1 || ds === 2 || ds === 3) {
+      dataSourceCache.value[k] = ds
+      // 同步写入元信息，便于后续使用
+      pointMeta.value[k] = { ...(pointMeta.value[k] || {}), ...(found || {}), data_source: ds }
+      return ds
+    }
+  } catch (e) {
+    console.warn('查询点位数据源失败:', e)
+  }
+  return undefined
 }
 
 async function refreshRow(row) {
@@ -798,10 +851,18 @@ async function executeBatchWrite() {
   batchProgress.value = { total: batchCommands.value.length, done: 0, success: 0, failed: 0 }
   
   try {
+    // 先解析每个命令的 data_source
+    const dsList = await Promise.all(batchCommands.value.map(cmd => resolveDataSource(cmd.object_code, cmd.data_code)))
+    const unresolvedIndex = dsList.findIndex(ds => ds !== 1 && ds !== 2 && ds !== 3)
+    if (unresolvedIndex >= 0) {
+      const bad = batchCommands.value[unresolvedIndex]
+      ElMessage.error(`无法获取点位数据源：${bad.object_code}:${bad.data_code}`)
+      return
+    }
     // 转换为 API 所需格式
-    const commands = batchCommands.value.map(cmd => ({
+    const commands = batchCommands.value.map((cmd, i) => ({
       point_key: cmd.point_key,
-      data_source: 3,
+      data_source: dsList[i] as 1 | 2 | 3,
       control_value: coerceControlValue(cmd.object_code, cmd.data_code, cmd.value),
       object_code: cmd.object_code,
       data_code: cmd.data_code
@@ -809,7 +870,11 @@ async function executeBatchWrite() {
     
     ElMessage.info(`开始执行 ${commands.length} 个写值命令...`)
     
-    const result = await batchWritePoints(commands)
+    const result = await batchWritePoints(
+      commands,
+      selectedStation.value,
+      { timeoutMs: 12000 }
+    )
     
     if (result && result.items) {
       const successCount = result.items.filter(item => item.status === 'ok').length
@@ -869,16 +934,26 @@ async function quickWrite(row) {
       ElMessage.error(vres.message || '输入值不合法')
       return
     }
+    // 解析该点位的真实数据源
+    const ds = await resolveDataSource(row.object_code, row.data_code)
+    if (ds !== 1 && ds !== 2 && ds !== 3) {
+      ElMessage.error(`无法获取点位数据源：${row.object_code}:${row.data_code}`)
+      return
+    }
     const processed = coerceControlValue(row.object_code, row.data_code, value)
     const cmd = [{
       point_key: `${row.object_code}:${row.data_code}`,
-      data_source: 3,
+      data_source: ds,
       control_value: processed,
       object_code: row.object_code,
       data_code: row.data_code,
     }]
     ElMessage.info(`正在写入: ${cmd[0].point_key} = ${processed}`)
-    const result = await batchWritePoints(cmd)
+    const result = await batchWritePoints(
+      cmd,
+      selectedStation.value,
+      { timeoutMs: 12000 }
+    )
     const ok = result && (result.items?.[0]?.status === 'ok' || result.success)
     if (ok) {
       ElMessage.success('写值成功')
@@ -1120,6 +1195,9 @@ onMounted(async () => {
       const firstStation = stations[0]
       if (firstStation && firstStation.station_ip) {
         selectedStation.value = firstStation.station_ip
+        // 设置默认车站后立即加载对应的设备树
+        await loadDeviceTree(false)
+        return // 已经加载了设备树，不需要再次加载
       }
     }
   } catch (error) {
@@ -1127,7 +1205,7 @@ onMounted(async () => {
     ElMessage.warning('线路配置加载失败，将使用测试数据')
   }
   
-  // 然后加载设备树
+  // 如果没有设置默认车站，则加载默认设备树
   await loadDeviceTree()
 })
 </script>

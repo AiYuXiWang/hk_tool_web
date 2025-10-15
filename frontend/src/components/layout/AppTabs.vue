@@ -41,10 +41,12 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, markRaw } from 'vue'
 import { 
   Monitor, 
   Download, 
+  DataAnalysis,
+  TrendCharts,
   Refresh, 
   FullScreen 
 } from '@element-plus/icons-vue'
@@ -66,13 +68,13 @@ const tabs = ref([
   {
     name: 'device',
     label: '设备总览',
-    icon: Monitor,
+    icon: markRaw(Monitor),
     badge: null
   },
   {
     name: 'export',
     label: '数据导出',
-    icon: Download,
+    icon: markRaw(Download),
     badge: null
   }
 ])

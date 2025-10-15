@@ -1,0 +1,83 @@
+/* 图标字体样式 - 为KPI看板提供图标支持 */
+@import url('https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css');
+
+/* 自定义图标映射 */
+.icon-dashboard::before { content: '\f3fd'; font-family: 'Font Awesome 6 Free'; font-weight: 900; }
+.icon-chart::before { content: '\f201'; font-family: 'Font Awesome 6 Free'; font-weight: 900; }
+.icon-radar::before { content: '\f140'; font-family: 'Font Awesome 6 Free'; font-weight: 900; }
+.icon-warning::before { content: '\f071'; font-family: 'Font Awesome 6 Free'; font-weight: 900; }
+
+/* KPI图标 */
+.icon-energy::before { content: '\f0e7'; font-family: 'Font Awesome 6 Free'; font-weight: 900; }
+.icon-power::before { content: '\f1e6'; font-family: 'Font Awesome 6 Free'; font-weight: 900; }
+.icon-efficiency::before { content: '\f201'; font-family: 'Font Awesome 6 Free'; font-weight: 900; }
+.icon-savings::before { content: '\f4d3'; font-family: 'Font Awesome 6 Free'; font-weight: 900; }
+.icon-carbon::before { content: '\f1bb'; font-family: 'Font Awesome 6 Free'; font-weight: 900; }
+.icon-health::before { content: '\f004'; font-family: 'Font Awesome 6 Free'; font-weight: 900; }
+
+/* 趋势图标 */
+.icon-arrow-up::before { content: '\f062'; font-family: 'Font Awesome 6 Free'; font-weight: 900; }
+.icon-arrow-down::before { content: '\f063'; font-family: 'Font Awesome 6 Free'; font-weight: 900; }
+.icon-minus::before { content: '\f068'; font-family: 'Font Awesome 6 Free'; font-weight: 900; }
+
+/* 告警图标 */
+.icon-error::before { content: '\f057'; font-family: 'Font Awesome 6 Free'; font-weight: 900; }
+.icon-info::before { content: '\f05a'; font-family: 'Font Awesome 6 Free'; font-weight: 900; }
+.icon-success::before { content: '\f058'; font-family: 'Font Awesome 6 Free'; font-weight: 900; }
+
+/* 图标基础样式 */
+[class^="icon-"], [class*=" icon-"] {
+  display: inline-block;
+  font-style: normal;
+  font-variant: normal;
+  text-rendering: auto;
+  line-height: 1;
+}
+
+/* 图标颜色变体 */
+.icon-primary { color: #00d4ff; }
+.icon-success { color: #4ecdc4; }
+.icon-warning { color: #ffa726; }
+.icon-danger { color: #ff6b6b; }
+.icon-info { color: #45b7d1; }
+
+/* 图标大小变体 */
+.icon-xs { font-size: 0.75rem; }
+.icon-sm { font-size: 0.875rem; }
+.icon-md { font-size: 1rem; }
+.icon-lg { font-size: 1.25rem; }
+.icon-xl { font-size: 1.5rem; }
+.icon-2x { font-size: 2rem; }
+.icon-3x { font-size: 3rem; }
+
+/* 图标动画 */
+.icon-spin {
+  animation: icon-spin 2s infinite linear;
+}
+
+.icon-pulse {
+  animation: icon-pulse 2s infinite;
+}
+
+@keyframes icon-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes icon-pulse {
+  0% { opacity: 1; }
+  50% { opacity: 0.5; }
+  100% { opacity: 1; }
+}
+
+/* 响应式图标 */
+@media (max-width: 768px) {
+  [class^="icon-"], [class*=" icon-"] {
+    font-size: 0.875rem;
+  }
+  
+  .icon-lg { font-size: 1rem; }
+  .icon-xl { font-size: 1.125rem; }
+  .icon-2x { font-size: 1.25rem; }
+  .icon-3x { font-size: 1.5rem; }
+}

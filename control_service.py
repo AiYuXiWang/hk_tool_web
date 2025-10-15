@@ -13,7 +13,7 @@ import requests
 import logging
 from threading import RLock
 
-from db_config import execute_query, insert_operation_log
+from db_config import execute_query, insert_operation_log, execute_query_with_host
 from models import (
     PointMetadata, DeviceTreeNode, RealtimeResponse, WriteCommand, 
     WriteResult, BatchWriteResponse, DeviceTreeResponse, PointListResponse
@@ -38,6 +38,19 @@ class PlatformAPIService:
         
         # 固定Token兜底
         self.fallback_token = "eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJhaXRlc3QiLCJhdWRpZW5jZSI6IndlYiIsImNyZWF0ZWQiOjE3NTUyMjIzOTM0ODUsIm5pY2tOYW1lIjoi57O757uf566h55CG5ZGYIiwiYXV0aFRva2VuIjpudWxsLCJjb21wYW55IjoyNTEsImV4cCI6MTAzOTUyMjIzOTMsInVzZXJJZCI6NDA1fQ.ulpIECFHg11RMmGhkYSqwwgNaVJ1ZyzG8vwuziVL9MIADQ07Sr1H6TQ7-5-qtnl3raTRQ_qSmjF4CZeWgoosoQ"
+
+    def _build_select_url(self, station_ip: Optional[str] = None) -> str:
+        """按站点构建实时查询URL；默认使用初始配置"""
+        if station_ip and isinstance(station_ip, str) and station_ip.strip():
+            return f"http://{station_ip.strip()}:9801/api/objectPointInfo/selectObjectPointValueByDataCode"
+        return self.select_url
+
+    def _build_write_url(self, station_ip: Optional[str] = None) -> str:
+        """按站点构建写值URL；默认使用初始配置"""
+        if station_ip and isinstance(station_ip, str) and station_ip.strip():
+            # 与查询接口一致，写值也走平台的 9801 端口
+            return f"http://{station_ip.strip()}:9801/api/objectPointInfo/writePointValue"
+        return self.write_url
     
     def get_runtime_token(self) -> str:
         """获取运行时token：优先使用缓存；过期则登录刷新"""
@@ -90,7 +103,7 @@ class PlatformAPIService:
             logger.error(f"平台登录异常: {e}")
             raise e
     
-    async def query_realtime_value(self, object_code: str, data_code: str) -> Dict[str, Any]:
+    async def query_realtime_value(self, object_code: str, data_code: str, station_ip: Optional[str] = None) -> Dict[str, Any]:
         """查询点位实时值"""
         token = self.get_runtime_token()
         logger.info(f"实时查询 object_code={object_code} data_code={data_code} token_len={len(token)}")
@@ -99,8 +112,9 @@ class PlatformAPIService:
         
         def _do_request():
             try:
+                url = self._build_select_url(station_ip)
                 resp = requests.post(
-                    self.select_url,
+                    url,
                     data={
                         "object_code": object_code,
                         "data_code": data_code,
@@ -126,7 +140,7 @@ class PlatformAPIService:
         raw_result = await loop.run_in_executor(None, _do_request)
         return raw_result
     
-    async def write_point_value(self, command: WriteCommand, token: str) -> Dict[str, Any]:
+    async def write_point_value(self, command: WriteCommand, token: str, station_ip: Optional[str] = None) -> Dict[str, Any]:
         """写入点位值"""
         payload = [  # 平台接口接受数组体
             {
@@ -140,8 +154,10 @@ class PlatformAPIService:
         
         def _do_request():
             try:
+                url = self._build_write_url(station_ip)
+                logger.info(f"写值请求路由: station_ip={station_ip or ''} url={url}")
                 resp = requests.post(
-                    self.write_url,
+                    url,
                     json=payload,
                     headers={
                         "Content-Type": "application/json",
@@ -370,10 +386,10 @@ class DeviceControlService:
             ]
             return DeviceTreeResponse(tree=test_tree, count=len(test_tree))
     
-    async def query_realtime_point(self, object_code: str, data_code: str, operator_id: str = "system") -> RealtimeResponse:
+    async def query_realtime_point(self, object_code: str, data_code: str, operator_id: str = "system", station_ip: Optional[str] = None) -> RealtimeResponse:
         """查询点位实时值"""
         try:
-            raw_result = await self.platform_api.query_realtime_value(object_code, data_code)
+            raw_result = await self.platform_api.query_realtime_value(object_code, data_code, station_ip)
             
             # 规范化返回
             now_iso = datetime.utcnow().isoformat() + "Z"
@@ -511,14 +527,14 @@ class DeviceControlService:
         
         return None
     
-    async def _get_before_value(self, command: WriteCommand, token: str) -> Optional[Any]:
+    async def _get_before_value(self, command: WriteCommand, token: str, station_ip: Optional[str] = None) -> Optional[Any]:
         """获取写值前的当前值"""
         if not command.object_code or not command.data_code:
             return None
         
         try:
             raw_result = await self.platform_api.query_realtime_value(
-                command.object_code, command.data_code
+                command.object_code, command.data_code, station_ip
             )
             if isinstance(raw_result, dict):
                 # 先尝试直接获取value字段
@@ -545,10 +561,10 @@ class DeviceControlService:
         
         return None
     
-    async def _write_single_point(self, command: WriteCommand, token: str, operator_id: str) -> WriteResult:
+    async def _write_single_point(self, command: WriteCommand, token: str, operator_id: str, station_ip: Optional[str] = None, skip_before: bool = False) -> WriteResult:
         """单条写值并带重试"""
         # 验证命令（动态获取data_source）
-        error = await self._validate_and_normalize_command(command)
+        error = await self._validate_and_normalize_command(command, station_ip)
         if error:
             return WriteResult(
                 point_key=command.point_key,
@@ -561,7 +577,9 @@ class DeviceControlService:
             )
         
         # 获取修改前值
-        before_value = await self._get_before_value(command, token)
+        before_value = None
+        if not skip_before:
+            before_value = await self._get_before_value(command, token, station_ip)
         
         # 执行写值（带重试）
         max_retries = 3
@@ -570,7 +588,7 @@ class DeviceControlService:
         
         while retries < max_retries:
             try:
-                result = await self.platform_api.write_point_value(command, token)
+                result = await self.platform_api.write_point_value(command, token, station_ip)
                 
                 if result.get("success"):
                     # 写值成功
@@ -657,7 +675,7 @@ class DeviceControlService:
             retries=max_retries
         )
     
-    async def batch_write_points(self, commands: List[WriteCommand], operator_id: str = "system") -> BatchWriteResponse:
+    async def batch_write_points(self, commands: List[WriteCommand], operator_id: str = "system", station_ip: Optional[str] = None, skip_before: bool = False) -> BatchWriteResponse:
         """批量写值控制：并发执行，部分失败不中断"""
         if not commands:
             return BatchWriteResponse(total=0, success=0, failed=0, items=[])
@@ -666,7 +684,7 @@ class DeviceControlService:
         
         # 并发执行所有写值任务
         tasks = [
-            asyncio.create_task(self._write_single_point(cmd, token, operator_id))
+            asyncio.create_task(self._write_single_point(cmd, token, operator_id, station_ip, skip_before))
             for cmd in commands
         ]
         

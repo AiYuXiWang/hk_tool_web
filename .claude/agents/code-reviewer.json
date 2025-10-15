@@ -1,0 +1,91 @@
+{
+  "name": "code-reviewer",
+  "description": "A specialized agent for performing comprehensive code reviews, identifying bugs, security vulnerabilities, performance issues, and suggesting improvements.",
+  "version": "1.0.0",
+  "category": "development-tools",
+  "tags": ["code-review", "quality-assurance", "security", "performance"],
+  "author": "Claude Code Templates",
+  "license": "MIT",
+  "homepage": "https://docs.aitmpl.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/davila7/claude-code-templates.git"
+  },
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "code-review",
+    "static-analysis",
+    "quality",
+    "security",
+    "performance",
+    "best-practices"
+  ],
+  "engines": {
+    "claude": ">=1.0.0"
+  },
+  "claude": {
+    "type": "agent",
+    "capabilities": [
+      "code-analysis",
+      "security-review",
+      "performance-review",
+      "style-review",
+      "architecture-review"
+    ],
+    "languages": [
+      "javascript",
+      "typescript",
+      "python",
+      "java",
+      "go",
+      "rust",
+      "c++",
+      "c#",
+      "php",
+      "ruby"
+    ],
+    "frameworks": [
+      "react",
+      "vue",
+      "angular",
+      "express",
+      "django",
+      "flask",
+      "spring",
+      "rails"
+    ],
+    "tools": [
+      "eslint",
+      "prettier",
+      "sonarqube",
+      "pylint",
+      "mypy",
+      "security-linters"
+    ],
+    "settings": {
+      "review_depth": "comprehensive",
+      "focus_areas": [
+        "security",
+        "performance",
+        "maintainability",
+        "best-practices",
+        "documentation"
+      ],
+      "output_format": "structured",
+      "severity_levels": [
+        "critical",
+        "major",
+        "minor",
+        "info"
+      ]
+    }
+  },
+  "dependencies": {},
+  "devDependencies": {},
+  "peerDependencies": {},
+  "optionalDependencies": {},
+  "bundleDependencies": []
+}

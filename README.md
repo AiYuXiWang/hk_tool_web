@@ -29,6 +29,36 @@
 - **openpyxl**: Excel 文件生成
 
 ### 前端
+
+本项目采用 Vue 3 框架与 Element Plus 组件库。已对“写值”相关交互进行了优化：
+- 默认在请求头中启用 `X-Skip-Before: 1`，跳过写前读取以提升响应速度。
+- 默认在请求头中设置路由层超时 `X-Timeout-Ms: 10000`（10 秒，可按需调整）。
+- 前端 Axios 超时设置为 12 秒，留出路由层的缓冲空间，确保请求能及时返回。
+
+快速写值与批量写值的结果处理已统一对后端标准响应进行解包，避免出现成功实际写入但界面显示“未知错误”的情况。
+
+如需切换 UI 组件库（例如 Ant Design Vue），建议在保留现有数据与服务调用层的前提下进行局部替换与样式适配，以减少迁移风险。
+
+---
+
+### 后端环境（使用 uv 管理）
+
+后端依赖与环境已适配 uv（Astral 的快速 Python 包管理工具）：
+- 使用 `uv venv` 创建虚拟环境（默认位于 `.venv`）。
+- 使用 `uv pip install -r requirements/base.txt` 安装基础依赖；开发环境可追加 `requirements/development.txt`。
+- 推荐将 Python 版本固定到项目所需版本（例如 `uv python pin 3.10`）。
+
+快速使用脚本：`scripts/uv_setup.ps1`
+
+```powershell
+## 需要先安装 uv: https://github.com/astral-sh/uv
+uv venv
+uv pip install -r requirements/base.txt
+# 如需开发依赖：
+uv pip install -r requirements/development.txt
+```
+
+说明：本项目包含 `pyproject.toml` 与分环境 `requirements/` 文件夹。短期内沿用 requirements 以兼容现有依赖清单；后续可逐步将依赖统一迁移到 `pyproject.toml` 的 PEP 621 格式，并使用 `uv sync` 进行锁定与安装，以确保可重复的开发环境。
 - **Vue 3**: 渐进式 JavaScript 框架
 - **Element Plus**: Vue 3 组件库
 - **Vite**: 前端构建工具

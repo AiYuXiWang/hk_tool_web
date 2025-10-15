@@ -1,12 +1,12 @@
 <template>
   <div class="app-layout">
     <AppHeader />
-    <div class="app-body">
+  <div class="app-body">
       <AppTabs v-model="activeTab" @change="handleTabChange">
-        <DeviceOverview v-show="activeTab === 'device'" />
-        <DataExport v-show="activeTab === 'export'" />
-      </AppTabs>
-    </div>
+      <DeviceOverview v-show="activeTab === 'device'" />
+      <DataExport v-show="activeTab === 'export'" />
+    </AppTabs>
+  </div>
   </div>
 </template>
 

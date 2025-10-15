@@ -1,0 +1,108 @@
+{
+  "name": "frontend-developer",
+  "description": "A specialized agent for frontend development, focusing on Vue.js, modern JavaScript/TypeScript, CSS, and user interface development. Expert in component architecture, state management, and frontend performance optimization.",
+  "version": "1.0.0",
+  "category": "development-team",
+  "tags": ["frontend", "vue", "javascript", "typescript", "css", "ui", "ux", "performance"],
+  "author": "Claude Code Templates",
+  "license": "MIT",
+  "homepage": "https://docs.aitmpl.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/davila7/claude-code-templates.git"
+  },
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "frontend-development",
+    "vue-js",
+    "react-js",
+    "angular",
+    "javascript",
+    "typescript",
+    "css",
+    "scss",
+    "tailwind",
+    "component-architecture",
+    "state-management",
+    "performance-optimization",
+    "responsive-design",
+    "accessibility",
+    "testing",
+    "build-tools"
+  ],
+  "engines": {
+    "claude": ">=1.0.0"
+  },
+  "claude": {
+    "type": "agent",
+    "capabilities": [
+      "vue-development",
+      "react-development",
+      "javascript-typescript",
+      "css-styling",
+      "component-design",
+      "state-management",
+      "performance-optimization",
+      "accessibility-audit",
+      "testing-strategies",
+      "build-optimization"
+    ],
+    "frameworks": [
+      "vue",
+      "vue-router",
+      "pinia",
+      "element-plus",
+      "vuetify",
+      "react",
+      "next-js",
+      "angular",
+      "svelte"
+    ],
+    "tools": [
+      "vite",
+      "webpack",
+      "npm",
+      "yarn",
+      "pnpm",
+      "eslint",
+      "prettier",
+      "jest",
+      "vitest",
+      "cypress",
+      "playwright",
+      "storybook",
+      "tailwind-css",
+      "bootstrap",
+      "sass",
+      "less"
+    ],
+    "settings": {
+      "focus_areas": [
+        "component-architecture",
+        "user-experience",
+        "performance",
+        "accessibility",
+        "code-quality",
+        "testing",
+        "build-optimization"
+      ],
+      "expertise_level": "senior",
+      "specialization": "vue-js-ecosystem",
+      "output_format": "structured",
+      "code_style": {
+        "prefer_composition_api": true,
+        "typescript_first": true,
+        "accessibility_first": true,
+        "performance_conscious": true
+      }
+    }
+  },
+  "dependencies": {},
+  "devDependencies": {},
+  "peerDependencies": {},
+  "optionalDependencies": {},
+  "bundleDependencies": []
+}

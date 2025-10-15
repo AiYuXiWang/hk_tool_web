@@ -42,13 +42,14 @@
 import { ref, computed } from 'vue'
 import { Monitor, User, Connection } from '@element-plus/icons-vue'
 
+const props = defineProps({
+  title: { type: String, default: '设备总览' }
+})
+
 const operatorId = ref('web-admin')
 const connectionStatus = ref('connected') // connected, disconnected, error
 
-const currentPageTitle = computed(() => {
-  // 这里可以根据当前路由或状态来动态设置
-  return '设备总览'
-})
+const currentPageTitle = computed(() => props.title)
 </script>
 
 <style scoped>

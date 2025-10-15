@@ -20,6 +20,12 @@ paths:
       summary: 点位实时值查询
       description: 通过 object_code + data_code 获取点位实时信息；服务端调用环控平台查询接口
       parameters:
+        - name: X-Station-Ip
+          in: header
+          required: false
+          schema:
+            type: string
+          description: 指定目标车站的 IP，用于按车站路由查询；缺失则使用默认配置
         - name: object_code
           in: query
           schema: { type: string }
@@ -47,6 +53,13 @@ paths:
       summary: 批量写值控制
       description: 唯一入口，由服务层 DeviceControlService 实现；前端仅调用此路径。
       description: 批量对点位写入设定值，支持并发执行与部分失败不中断
+      parameters:
+        - name: X-Station-Ip
+          in: header
+          required: true
+          schema:
+            type: string
+          description: 指定目标车站的 IP，用于按车站路由写值；缺失将被拒绝（400）
       requestBody:
         required: true
         content:

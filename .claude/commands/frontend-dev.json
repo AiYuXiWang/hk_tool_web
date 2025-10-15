@@ -1,0 +1,131 @@
+{
+  "name": "frontend-dev",
+  "description": "Frontend development utilities and commands for Vue.js projects",
+  "version": "1.0.0",
+  "category": "development-tools",
+  "tags": ["frontend", "vue", "javascript", "typescript", "build", "test"],
+  "author": "Claude Code Templates",
+  "license": "MIT",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "frontend",
+    "vue-cli",
+    "vite",
+    "npm-scripts",
+    "development-tools",
+    "build-automation",
+    "testing-automation",
+    "code-quality"
+  ],
+  "engines": {
+    "claude": ">=1.0.0"
+  },
+  "claude": {
+    "type": "command",
+    "commands": {
+      "dev": {
+        "description": "Start development server",
+        "script": "cd frontend && npm run dev",
+        "description_cn": "启动前端开发服务器"
+      },
+      "build": {
+        "description": "Build for production",
+        "script": "cd frontend && npm run build",
+        "description_cn": "构建生产版本"
+      },
+      "preview": {
+        "description": "Preview production build",
+        "script": "cd frontend && npm run preview",
+        "description_cn": "预览生产构建版本"
+      },
+      "test": {
+        "description": "Run frontend tests",
+        "script": "cd frontend && npm run test",
+        "description_cn": "运行前端测试"
+      },
+      "lint": {
+        "description": "Lint frontend code",
+        "script": "cd frontend && npm run lint",
+        "description_cn": "代码检查"
+      },
+      "lint:fix": {
+        "description": "Fix linting issues",
+        "script": "cd frontend && npm run lint:fix",
+        "description_cn": "自动修复代码问题"
+      },
+      "format": {
+        "description": "Format frontend code",
+        "script": "cd frontend && npm run format",
+        "description_cn": "代码格式化"
+      },
+      "type-check": {
+        "description": "Run TypeScript type checking",
+        "script": "cd frontend && npm run type-check",
+        "description_cn": "TypeScript 类型检查"
+      },
+      "analyze": {
+        "description": "Analyze bundle size",
+        "script": "cd frontend && npm run analyze",
+        "description_cn": "分析打包体积"
+      },
+      "clean": {
+        "description": "Clean build artifacts",
+        "script": "cd frontend && rm -rf node_modules dist .nuxt .output .vite",
+        "description_cn": "清理构建产物"
+      },
+      "deps:check": {
+        "description": "Check for outdated dependencies",
+        "script": "cd frontend && npm outdated",
+        "description_cn": "检查依赖更新"
+      },
+      "deps:update": {
+        "description": "Update dependencies",
+        "script": "cd frontend && npm update",
+        "description_cn": "更新依赖包"
+      },
+      "security:audit": {
+        "description": "Audit for security vulnerabilities",
+        "script": "cd frontend && npm audit",
+        "description_cn": "安全漏洞检查"
+      }
+    },
+    "aliases": {
+      "start": "dev",
+      "serve": "dev",
+      "build:prod": "build",
+      "test:unit": "test",
+      "test:e2e": "test:e2e",
+      "check": "type-check"
+    },
+    "workflows": {
+      "setup": [
+        "npm install",
+        "npm run lint:fix",
+        "npm run type-check",
+        "npm run test"
+      ],
+      "deploy": [
+        "npm run clean",
+        "npm install",
+        "npm run lint",
+        "npm run type-check",
+        "npm run test",
+        "npm run build"
+      ],
+      "quality-check": [
+        "npm run lint",
+        "npm run type-check",
+        "npm run test",
+        "npm run analyze"
+      ]
+    }
+  },
+  "dependencies": {},
+  "devDependencies": {},
+  "peerDependencies": {},
+  "optionalDependencies": {},
+  "bundleDependencies": []
+}

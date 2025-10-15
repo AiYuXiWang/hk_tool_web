@@ -166,6 +166,16 @@
                   clearable
                 />
               </div>
+              <div class="input-item current-value">
+                <label class="input-label">当前值</label>
+                <el-input
+                  :model-value="currentValueText || ''"
+                  placeholder="—"
+                  size="small"
+                  class="query-input"
+                  readonly
+                />
+              </div>
               <el-button 
                 type="primary" 
                 :loading="loadingQuery"
@@ -210,6 +220,11 @@
               <el-button type="primary" plain size="small" @click="exportCSV">导出 CSV</el-button>
             </div>
           </div>
+          <el-alert type="info" :closable="false" show-icon class="write-policy-hint" style="margin: 8px 0;">
+            <template #title>
+              默认写值策略：跳过写前读取（X-Skip-Before: 1），路由超时 10 秒（X-Timeout-Ms: 10000）。
+            </template>
+          </el-alert>
           <div class="table-container">
             <el-table 
               :data="tableRows" 
@@ -365,7 +380,7 @@ import {
   Aim,
   DataBoard
 } from '@element-plus/icons-vue'
-import { fetchDeviceTree, fetchRealtimeValue, batchWritePoints, fetchLineConfigs } from '../api/control'
+import { fetchDeviceTree, fetchRealtimeValue, batchWritePoints, fetchLineConfigs, setStationIp } from '../api/control'
 import { ElMessage } from 'element-plus'
 
 const filter = ref('')
@@ -401,6 +416,15 @@ const quickValues = ref({})
 const writingKeys = ref(new Set())
 // 自动查询开关
 const autoQuery = ref(true)
+// 当前值展示
+const lastRealtime = ref(null)
+const currentValueText = computed(() => {
+  const r = lastRealtime.value
+  if (!r) return ''
+  const v = r.value
+  const unit = r.unit ? ` ${r.unit}` : ''
+  return v == null ? '—' : `${v}${unit}`
+})
 
 const treeDataFiltered = computed(() => {
   const q = filter.value.trim()
@@ -425,6 +449,8 @@ function onNodeClick(data) {
   console.debug('Node clicked:', data)
   if (isPointNode(data)) {
     query.value = { object_code: data.meta?.object_code || '', data_code: data.meta?.data_code || '' }
+    // 点击点位时确保请求头包含站点，避免后端路由错误
+    if (selectedStation.value) setStationIp(selectedStation.value)
     // 点击点位后自动查询（可配置开关）
     if (autoQuery.value) fetchRealtime()
   }
@@ -433,6 +459,8 @@ function onNodeClick(data) {
 async function loadDeviceTree(isTest = false) {
   loadingTree.value = true
   try {
+    // 每次加载设备树前设置站点请求头，确保后端按站点路由
+    if (selectedStation.value) setStationIp(selectedStation.value)
     const opts = isTest 
       ? { forceTest: true, station_ip: selectedStation.value || undefined }
       : { station_ip: selectedStation.value || undefined }
@@ -483,8 +511,12 @@ async function fetchRealtime(opts = {}) {
   try {
     const res = await fetchRealtimeValue(query.value.object_code, query.value.data_code)
     const rows = Array.isArray(res) ? res : (res ? [res] : [])
+    // 过滤非法项（如错误对象）
+    const validRows = rows.filter((item) => item && item.object_code && item.data_code)
+    // 更新当前值展示为最新一条
+    lastRealtime.value = validRows[0] || null
     let appendedCount = 0
-    rows.forEach((item) => {
+    validRows.forEach((item) => {
       const key = `${item.object_code}|${item.data_code}`
       const idx = tableRows.value.findIndex(r => `${r.object_code}|${r.data_code}` === key)
       if (idx >= 0) {
@@ -494,10 +526,17 @@ async function fetchRealtime(opts = {}) {
         appendedCount += 1
       }
     })
-    lastUpdatedAt.value = Date.now()
-    await nextTick()
-    const shouldScroll = scroll === true || (scroll !== false && appendedCount > 0)
-    if (shouldScroll) scrollTableToBottom()
+    if (validRows.length === 0) {
+      // 无有效结果：提示并不更新行数
+      ElMessage.error('查询失败：后端拒绝或返回异常')
+    } else {
+      lastUpdatedAt.value = Date.now()
+      await nextTick()
+      const shouldScroll = scroll === true || (scroll !== false && appendedCount > 0)
+      if (shouldScroll) scrollTableToBottom()
+    }
+  } catch (e) {
+    ElMessage.error(`查询异常：${e?.message || e}`)
   } finally {
     loadingQuery.value = false
   }
@@ -537,6 +576,8 @@ async function writeSingle(row) {
   if (value === undefined || value === null || value === '') return
   writingKeys.value.add(key)
   try {
+    // 写入前确保设置站点请求头，避免后端路由错误
+    if (selectedStation.value) setStationIp(selectedStation.value)
     // 规范化控制值：数字优先，其次布尔
     const normalized = (() => {
       if (value === true || value === 'true' || value === 1 || value === '1') return 1
@@ -553,7 +594,7 @@ async function writeSingle(row) {
         object_code: row.object_code,
         data_code: row.data_code,
       },
-    ])
+    ], selectedStation.value, { timeoutMs: 12000 })
     const item = Array.isArray(resp?.items) ? resp.items[0] : null
     if (item && item.status === 'ok') {
       ElMessage.success(`写入成功：${row.object_code}:${row.data_code} = ${normalized}`)
@@ -615,7 +656,7 @@ async function executeBatch() {
     data_code: r.data_code,
   }))
   try {
-    const result = await batchWritePoints(commands)
+    const result = await batchWritePoints(commands, selectedStation.value, { timeoutMs: 12000 })
     const items = Array.isArray(result?.items) ? result.items : []
     const successCount = items.filter((i) => i.status === 'ok').length
     const failedCount = items.length - successCount
@@ -673,7 +714,7 @@ async function retryBatchRow(row, idx) {
         object_code: row.object_code,
         data_code: row.data_code,
       },
-    ])
+    ], selectedStation.value, { timeoutMs: 12000 })
     const item = Array.isArray(resp?.items) ? resp.items[0] : null
     if (item && item.status === 'ok') {
       row.last_status = 'ok'

@@ -1,0 +1,498 @@
+name: UI优化部署流程
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/ui-optimization.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+
+env:
+  NODE_VERSION: '18'
+  FRONTEND_PATH: './frontend'
+  BUILD_CACHE_KEY: ${{ runner.os }}-node-${{ hashFiles('frontend/package-lock.json') }}
+
+jobs:
+  # 代码质量检查
+  quality-check:
+    runs-on: ubuntu-latest
+    name: 代码质量检查
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: ${{ env.FRONTEND_PATH }}/package-lock.json
+
+      - name: 安装依赖
+        working-directory: ${{ env.FRONTEND_PATH }}
+        run: npm ci
+
+      - name: ESLint检查
+        working-directory: ${{ env.FRONTEND_PATH }}
+        run: npm run lint:check
+
+      - name: 代码格式检查
+        working-directory: ${{ env.FRONTEND_PATH }}
+        run: npm run format:check
+
+      - name: TypeScript类型检查
+        working-directory: ${{ env.FRONTEND_PATH }}
+        run: npm run type-check
+
+      - name: 上传质量报告
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: quality-reports
+          path: |
+            ${{ env.FRONTEND_PATH }}/eslint-report.html
+            ${{ env.FRONTEND_PATH }}/type-check-report.txt
+          retention-days: 7
+
+  # 单元测试
+  unit-tests:
+    runs-on: ubuntu-latest
+    name: 单元测试
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: ${{ env.FRONTEND_PATH }}/package-lock.json
+
+      - name: 安装依赖
+        working-directory: ${{ env.FRONTEND_PATH }}
+        run: npm ci
+
+      - name: 运行单元测试
+        working-directory: ${{ env.FRONTEND_PATH }}
+        run: npm run test:coverage
+
+      - name: 上传覆盖率报告
+        uses: codecov/codecov-action@v3
+        with:
+          file: ${{ env.FRONTEND_PATH }}/coverage/lcov.info
+          flags: ui-optimization
+          name: UI优化测试覆盖率
+
+      - name: 上传测试结果
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-results
+          path: ${{ env.FRONTEND_PATH }}/coverage/
+          retention-days: 7
+
+  # 组件测试
+  component-tests:
+    runs-on: ubuntu-latest
+    name: 组件测试
+    needs: [quality-check]
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: ${{ env.FRONTEND_PATH }}/package-lock.json
+
+      - name: 安装依赖
+        working-directory: ${{ env.FRONTEND_PATH }}
+        run: npm ci
+
+      - name: 构建项目
+        working-directory: ${{ env.FRONTEND_PATH }}
+        run: npm run build
+
+      - name: 运行组件测试
+        working-directory: ${{ env.FRONTEND_PATH }}
+        run: npm run test:components
+
+  # 端到端测试
+  e2e-tests:
+    runs-on: ubuntu-latest
+    name: 端到端测试
+    needs: [unit-tests]
+
+    services:
+      # 模拟后端服务
+      backend:
+        image: node:18-alpine
+        ports:
+          - 8000:8000
+        options: >-
+          --health-cmd "curl -f http://localhost:8000/health || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: ${{ env.FRONTEND_PATH }}/package-lock.json
+
+      - name: 安装依赖
+        working-directory: ${{ env.FRONTEND_PATH }}
+        run: npm ci
+
+      - name: 构建项目
+        working-directory: ${{ env.FRONTEND_PATH }}
+        run: npm run build
+
+      - name: 启动应用
+        working-directory: ${{ env.FRONTEND_PATH }}
+        run: |
+          npm run preview &
+          sleep 10
+
+      - name: 安装Cypress
+        working-directory: ${{ env.FRONTEND_PATH }}
+        run: npx cypress install
+
+      - name: 运行E2E测试
+        working-directory: ${{ env.FRONTEND_PATH }}
+        run: npx cypress run --spec "cypress/e2e/ui-optimization.cy.js"
+
+      - name: 上传测试视频
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: cypress-videos
+          path: ${{ env.FRONTEND_PATH }}/cypress/videos/
+          retention-days: 7
+
+      - name: 上传测试截图
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: cypress-screenshots
+          path: ${{ env.FRONTEND_PATH }}/cypress/screenshots/
+          retention-days: 7
+
+  # 性能测试
+  performance-tests:
+    runs-on: ubuntu-latest
+    name: 性能测试
+    needs: [component-tests]
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: ${{ env.FRONTEND_PATH }}/package-lock.json
+
+      - name: 安装依赖
+        working-directory: ${{ env.FRONTEND_PATH }}
+        run: npm ci
+
+      - name: 构建项目
+        working-directory: ${{ env.FRONTEND_PATH }}
+        run: npm run build
+
+      - name: 启动应用
+        working-directory: ${{ env.FRONTEND_PATH }}
+        run: |
+          npm run preview &
+          sleep 10
+
+      - name: 运行Lighthouse性能测试
+        run: |
+          npx @lhci/cli@0.12.x autorun
+        env:
+          LHCI_GITHUB_APP_TOKEN: ${{ secrets.LHCI_GITHUB_APP_TOKEN }}
+
+      - name: 性能基准测试
+        working-directory: ${{ env.FRONTEND_PATH }}
+        run: npm run test:performance
+
+  # 构建和打包
+  build:
+    runs-on: ubuntu-latest
+    name: 构建打包
+    needs: [unit-tests, e2e-tests]
+
+    strategy:
+      matrix:
+        environment: [development, staging, production]
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: ${{ env.FRONTEND_PATH }}/package-lock.json
+
+      - name: 安装依赖
+        working-directory: ${{ env.FRONTEND_PATH }}
+        run: npm ci
+
+      - name: 构建项目
+        working-directory: ${{ env.FRONTEND_PATH }}
+        run: |
+          if [ "${{ matrix.environment }}" = "production" ]; then
+            npm run build:prod
+          else
+            npm run build
+          fi
+        env:
+          NODE_ENV: ${{ matrix.environment }}
+
+      - name: 压缩构建产物
+        working-directory: ${{ env.FRONTEND_PATH }}
+        run: |
+          tar -czf ui-optimization-${{ matrix.environment }}.tar.gz dist/
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-optimization-${{ matrix.environment }}
+          path: ${{ env.FRONTEND_PATH }}/ui-optimization-${{ matrix.environment }}.tar.gz
+          retention-days: 30
+
+      - name: 生成构建报告
+        working-directory: ${{ env.FRONTEND_PATH }}
+        run: |
+          npm run build:analyze
+
+      - name: 上传构建报告
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-report-${{ matrix.environment }}
+          path: ${{ env.FRONTEND_PATH }}/dist-report.html
+          retention-days: 7
+
+  # 安全扫描
+  security-scan:
+    runs-on: ubuntu-latest
+    name: 安全扫描
+    needs: [build]
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: 运行npm安全审计
+        working-directory: ${{ env.FRONTEND_PATH }}
+        run: npm audit --audit-level moderate
+
+      - name: 运行Snyk安全扫描
+        uses: snyk/actions/node@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --severity-threshold=high
+          command: monitor
+          project: ${{ env.FRONTEND_PATH }}
+
+  # 部署到开发环境
+  deploy-dev:
+    runs-on: ubuntu-latest
+    name: 部署到开发环境
+    needs: [build, security-scan]
+    if: github.ref == 'refs/heads/develop'
+    environment: development
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 下载构建产物
+        uses: actions/download-artifact@v4
+        with:
+          name: ui-optimization-development
+          path: ${{ env.FRONTEND_PATH }}
+
+      - name: 解压构建产物
+        working-directory: ${{ env.FRONTEND_PATH }}
+        run: |
+          tar -xzf ui-optimization-development.tar.gz
+
+      - name: 部署到开发服务器
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.DEV_HOST }}
+          username: ${{ secrets.DEV_USERNAME }}
+          key: ${{ secrets.DEV_SSH_KEY }}
+          script: |
+            cd /var/www/hk-tool-web
+            docker-compose down
+            rm -rf dist/
+            mkdir -p dist/
+            # 这里应该是从上传的文件中复制，简化示例
+            docker-compose up -d
+
+      - name: 健康检查
+        run: |
+          sleep 30
+          curl -f https://dev.hk-tool-web.com/health || exit 1
+
+      - name: 通知部署结果
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          channel: '#deployment'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+        if: always()
+
+  # 部署到生产环境
+  deploy-prod:
+    runs-on: ubuntu-latest
+    name: 部署到生产环境
+    needs: [build, security-scan]
+    if: github.ref == 'refs/heads/main'
+    environment: production
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 下载构建产物
+        uses: actions/download-artifact@v4
+        with:
+          name: ui-optimization-production
+          path: ${{ env.FRONTEND_PATH }}
+
+      - name: 解压构建产物
+        working-directory: ${{ env.FRONTEND_PATH }}
+        run: |
+          tar -xzf ui-optimization-production.tar.gz
+
+      - name: 创建版本标签
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const version = `v1.${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, '0')}${String(new Date().getDate()).padStart(2, '0')}.${process.env.GITHUB_RUN_NUMBER}`
+            github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: version,
+              name: `UI优化发布 ${version}`,
+              body: `## UI优化功能发布\n\n### 新增功能\n- 增强按钮组件\n- KPI卡片组件升级\n- 加载骨架屏组件\n- 响应式设计优化\n\n### 改进\n- 交互体验优化\n- 性能提升\n- 无障碍支持\n\n### 技术债务\n- 代码重构\n- 测试覆盖率提升`,
+              draft: false,
+              prerelease: false
+            })
+
+      - name: 蓝绿部署到生产环境
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.PROD_HOST }}
+          username: ${{ secrets.PROD_USERNAME }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          script: |
+            cd /var/www/hk-tool-web
+            # 健康检查当前版本
+            curl -f https://hk-tool-web.com/health || exit 1
+
+            # 蓝绿部署
+            docker-compose -f docker-compose.blue.yml up -d
+            sleep 60
+
+            # 健康检查新版本
+            curl -f https://blue.hk-tool-web.com/health || exit 1
+
+            # 切换流量
+            docker-compose -f docker-compose.switch.yml up
+            sleep 30
+
+            # 清理旧版本
+            docker-compose -f docker-compose.green.yml down
+
+      - name: 生产环境健康检查
+        run: |
+          sleep 60
+          curl -f https://hk-tool-web.com/health || exit 1
+          curl -f https://hk-tool-web.com/api/health || exit 1
+
+      - name: 性能监控
+        run: |
+          # 使用Lighthouse CI检查生产环境性能
+          npx @lhci/cli@0.12.x autorun --config=.lighthouserc-prod.js
+
+      - name: 通知发布结果
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          channel: '#deployment'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+          text: |
+            🚀 UI优化功能已成功部署到生产环境！
+
+            📊 发布信息：
+            - 版本：v1.${{ github.run_number }}
+            - 提交：${{ github.sha }}
+            - 分支：${{ github.ref_name }}
+
+            🔗 访问链接：https://hk-tool-web.com
+        if: always()
+
+  # 回滚任务
+  rollback:
+    runs-on: ubuntu-latest
+    name: 紧急回滚
+    needs: [deploy-prod]
+    if: failure() && github.ref == 'refs/heads/main'
+    environment: production
+
+    steps:
+      - name: 紧急回滚
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.PROD_HOST }}
+          username: ${{ secrets.PROD_USERNAME }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          script: |
+            cd /var/www/hk-tool-web
+            # 回滚到上一个版本
+            docker-compose rollback
+            sleep 30
+            curl -f https://hk-tool-web.com/health || exit 1
+
+      - name: 通知回滚
+        uses: 8398a7/action-slack@v3
+        with:
+          status: 'failure'
+          channel: '#deployment'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+          text: |
+            🚨 生产环境已紧急回滚！
+
+            请立即检查并修复问题。
+        if: always()

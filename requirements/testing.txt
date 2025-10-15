@@ -1,0 +1,35 @@
+# 测试环境依赖
+-r base.txt
+
+# 测试框架
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-cov==4.1.0
+pytest-mock==3.12.0
+pytest-xdist==3.5.0  # 并行测试
+pytest-benchmark==4.0.0  # 性能测试
+
+# 测试工具
+factory-boy==3.3.0  # 测试数据工厂
+faker==20.1.0  # 假数据生成
+freezegun==1.2.2  # 时间模拟
+responses==0.24.1  # HTTP请求模拟
+
+# 测试数据库
+sqlite3  # 内存数据库用于测试
+
+# 覆盖率报告
+coverage[toml]==7.3.2
+
+# API测试
+httpx==0.27.0
+
+# 测试报告
+pytest-html==4.1.1
+pytest-json-report==1.5.0
+
+# 代码质量检查（测试环境也需要）
+black==23.11.0
+isort==5.12.0
+flake8==6.1.0
+mypy==1.7.1

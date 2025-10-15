@@ -6,11 +6,13 @@ from functools import partial
 import os
 import logging
 import asyncio
+import threading
 import config_electricity
 import db_config
 from db_config import select_bus_object_point_data, execute_query, DB_CONFIG
 from models import ExportResult, StationExportResult
 from logger_config import app_logger
+from task_manager import task_manager, TaskStatus
 
 # 使用配置好的logger
 logger = app_logger
@@ -39,7 +41,7 @@ class ElectricityExportService:
         """获取历史数据"""
         try:
             logger.info(f"开始请求历史数据: {api_url}")
-            response = requests.post(f"{api_url}/data/selectHisData", json=obj, timeout=5)  # 5秒超时
+            response = requests.post(f"{api_url}/data/selectHisData", json=obj, timeout=15)  # 15秒超时，适应M2线路多站点需求
             if response.status_code == 200:
                 data = response.json().get("data", [])
                 logger.info(f"成功获取历史数据: {api_url}, 数据条数: {len(data)}")
@@ -48,7 +50,7 @@ class ElectricityExportService:
                 logger.error(f"获取数据失败: {api_url}, 状态码: {response.status_code}")
                 return []
         except requests.Timeout:
-            logger.error(f"API请求超时(超过5秒): {api_url}")
+            logger.error(f"API请求超时(超过15秒): {api_url}")
             return []
         except requests.ConnectionError:
             logger.error(f"API连接失败: {api_url}")
@@ -325,7 +327,7 @@ class ElectricityExportService:
                 logger.error(f"{station_name} ({ip}) {error_msg}")
                 return False, error_msg, None
             
-            filename = f"电耗统计_{config['ip']}_{ip}_{start_time.strftime('%Y%m%d')}_{end_time.strftime('%Y%m%d')}.xlsx"
+            filename = f"电耗统计_{station_name}_{ip}_{start_time.strftime('%Y%m%d')}_{end_time.strftime('%Y%m%d')}.xlsx"
             
             logger.info(f"{station_name} ({ip}) 正在导出文件: {filename}")
             if self.export_data(processed_data, energy_status, start_time, end_time, filename):
@@ -366,7 +368,7 @@ class ElectricityExportService:
             success_count = 0
             fail_count = 0
             
-            with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:  # 增加并发数以支持M2线路6个站点
                 futures = {
                     executor.submit(
                         self.export_single_ip,
@@ -378,7 +380,7 @@ class ElectricityExportService:
                     ip = futures[future]
                     station_name = config_map[ip].get('station', '未知站名')
                     try:
-                        success, error, filename = future.result(timeout=15)  # 15秒超时
+                        success, error, filename = future.result(timeout=12)  # 减少到12秒超时，提高并发效率
                         if success:
                             success_count += 1
                             logger.info(f"✓ {station_name} ({ip}) 导出成功 - 文件: {filename}")
@@ -452,6 +454,198 @@ class ElectricityExportService:
                 success=False,
                 message=f"导出失败: {str(e)}"
             )
+
+    def start_async_export(self, selected_line, start_time, end_time):
+        """启动异步导出任务"""
+        try:
+            logger.info(f"[DEBUG] 开始创建异步导出任务: line={selected_line}")
+            
+            # 创建任务
+            task_id = task_manager.create_task(
+                task_type="electricity",
+                line=selected_line,
+                start_time=start_time,
+                end_time=end_time
+            )
+            logger.info(f"[DEBUG] 任务创建成功: task_id={task_id}")
+            
+            # 在后台线程中执行导出
+            thread = threading.Thread(
+                target=self._export_with_progress,
+                args=(task_id, selected_line, start_time, end_time)
+            )
+            thread.daemon = True
+            logger.info(f"[DEBUG] 准备启动后台线程")
+            thread.start()
+            logger.info(f"[DEBUG] 后台线程已启动")
+            
+            logger.info(f"[DEBUG] 准备返回结果")
+            return {"task_id": task_id, "status": "started"}
+            
+        except Exception as e:
+            logger.error(f"启动异步导出任务失败: {e}")
+            return {"error": str(e)}
+
+    def _export_with_progress(self, task_id, selected_line, start_time, end_time):
+        """带进度更新的导出执行"""
+        # 预先初始化变量，确保异常时也能返回部分成功结果
+        config_map = {}
+        total_stations = 0
+        results = []
+        success_count = 0
+        fail_count = 0
+        try:
+            # 更新任务状态为运行中
+            task_manager.update_task_status(task_id, TaskStatus.RUNNING)
+            
+            # 获取配置
+            # 统一使用在构造函数中加载的 line_configs
+            config_map = self.line_configs.get(selected_line, {})
+            if not config_map:
+                task_manager.set_task_result(task_id, {
+                    "success": False,
+                    "message": f"未找到线路 {selected_line} 的配置"
+                })
+                task_manager.update_task_status(task_id, TaskStatus.FAILED)
+                return
+            
+            total_stations = len(config_map)
+            task_manager.update_task_progress(task_id, 0, total_stations, "开始导出...")
+            
+            # 执行导出
+            results = []
+            success_count = 0
+            fail_count = 0
+            
+            with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
+                # 提交所有任务
+                future_to_station = {}
+                for station_name, config in config_map.items():
+                    future = executor.submit(
+                        self.export_single_ip,
+                        config['ip'],
+                        config,
+                        start_time,
+                        end_time
+                    )
+                    future_to_station[future] = station_name
+                
+                # 处理完成的任务
+                completed = 0
+                # 当所有站点均完成时，进行一次兜底的提前完结，避免前端出现100%但仍为running且result为空的状态
+                allow_early_finalize = os.environ.get('FORCE_FAIL_AFTER_RESULTS') != '1'
+                early_finalized = False
+                for future in concurrent.futures.as_completed(future_to_station, timeout=120):
+                    station_name = future_to_station[future]
+                    completed += 1
+                    
+                    try:
+                        result = future.result(timeout=15)
+                        # 统一结果为 StationExportResult，避免后续 r.dict() 报错
+                        s = False
+                        msg = None
+                        file_path = None
+                        try:
+                            # export_single_ip 返回格式: (success: bool, message: Optional[str], filename: Optional[str])
+                            s, msg, file_path = result
+                        except Exception:
+                            # 若返回已是对象，做容错提取
+                            s = getattr(result, 'success', False)
+                            msg = getattr(result, 'message', None)
+                            file_path = getattr(result, 'file_path', None)
+
+                        station_result = StationExportResult(
+                            station_name=station_name,
+                            station_ip=config_map[station_name]['ip'],
+                            success=bool(s),
+                            message=(msg if msg else ("导出成功" if s else "导出失败")),
+                            file_path=file_path
+                        )
+                        results.append(station_result)
+
+                        if station_result.success:
+                            success_count += 1
+                            logger.info(f"✓ {station_name}: 导出成功")
+                        else:
+                            fail_count += 1
+                            logger.warning(f"✗ {station_name}: {station_result.message}")
+                            
+                    except Exception as e:
+                        fail_count += 1
+                        error_msg = f"导出超时或出错: {str(e)}"
+                        logger.error(f"✗ {station_name}: {error_msg}")
+                        results.append(StationExportResult(
+                            station_name=station_name,
+                            station_ip=config_map[station_name]['ip'],
+                            success=False,
+                            message=error_msg
+                        ))
+                    
+                    # 更新进度
+                    progress_msg = f"已完成 {completed}/{total_stations} 个站点"
+                    task_manager.update_task_progress(task_id, completed, total_stations, progress_msg)
+
+                    # 兜底：若所有站点都已完成，且允许提前完结，则立即设置结果并标记完成
+                    if not early_finalized and allow_early_finalize and completed >= total_stations:
+                        try:
+                            final_result = {
+                                "success": True,
+                                "message": f"导出完成: 成功 {success_count} 个, 失败 {fail_count} 个",
+                                "details": {
+                                    "total": total_stations,
+                                    "success_count": success_count,
+                                    "fail_count": fail_count,
+                                    "results": [r.dict() for r in results]
+                                }
+                            }
+                            task_manager.set_task_result(task_id, final_result)
+                            task_manager.update_task_status(task_id, TaskStatus.COMPLETED)
+                            logger.info(f"异步导出任务 {task_id} 提前完结 (进度=100%)")
+                            early_finalized = True
+                        except Exception as _e:
+                            logger.warning(f"任务 {task_id} 提前完结失败，继续后续流程: {_e}")
+
+            # 调试：可控地在汇总阶段模拟失败，用于联调前端“部分成功下载”
+            try:
+                if os.environ.get('FORCE_FAIL_AFTER_RESULTS') == '1':
+                    raise RuntimeError('模拟收尾失败')
+            except Exception as _e:
+                # 直接进入异常处理分支
+                raise
+            
+            # 设置最终结果
+            final_result = {
+                "success": True,
+                "message": f"导出完成: 成功 {success_count} 个, 失败 {fail_count} 个",
+                "details": {
+                    "total": total_stations,
+                    "success_count": success_count,
+                    "fail_count": fail_count,
+                    "results": [result.dict() for result in results]
+                }
+            }
+            
+            task_manager.set_task_result(task_id, final_result)
+            logger.info(f"异步导出任务 {task_id} 完成")
+            # 标记任务完成，便于前端停止轮询
+            task_manager.update_task_status(task_id, TaskStatus.COMPLETED)
+            
+        except Exception as e:
+            logger.error(f"异步导出任务 {task_id} 执行失败: {e}")
+            # 即使失败也返回目前已完成的站点结果，便于前端提供“部分成功”下载入口
+            partial_details = {
+                "total": total_stations,
+                "success_count": success_count,
+                "fail_count": fail_count,
+                "results": [r.dict() for r in results]
+            }
+            task_manager.set_task_result(task_id, {
+                "success": False,
+                "message": f"导出失败: {str(e)}",
+                "details": partial_details
+            })
+            # 标记任务失败，便于前端停止轮询
+            task_manager.update_task_status(task_id, TaskStatus.FAILED)
 
 
 class SensorDataExportService:
@@ -553,7 +747,7 @@ class SensorDataExportService:
             }
 
             # 发送请求获取历史数据
-            response = requests.post(f"{api_url}/data/selectHisData", json=obj, timeout=5)  # 5秒超时
+            response = requests.post(f"{api_url}/data/selectHisData", json=obj, timeout=15)  # 15秒超时，适应M2线路多站点需求
             if response.status_code == 200:
                 data = response.json().get("data", [])
                 logger.info(f"成功获取传感器数据: {api_url}, 数据条数: {len(data)}")
@@ -562,7 +756,7 @@ class SensorDataExportService:
                 logger.error(f"获取传感器数据失败，状态码: {response.status_code}")
                 return None
         except requests.Timeout:
-            logger.error(f"传感器API请求超时(超过5秒): {api_url}")
+            logger.error(f"传感器API请求超时(超过15秒): {api_url}")
             return None
         except requests.ConnectionError:
             logger.error(f"传感器API连接失败: {api_url}")
