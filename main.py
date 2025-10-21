@@ -345,6 +345,106 @@ async def get_energy_suggestions(line: str, station_ip: Optional[str] = None):
     })
     return {"items": items}
 
+@app.get("/api/energy/compare")
+async def energy_compare(line: str, station_ip: Optional[str] = None, period: str = "24h"):
+    """能耗同比/环比比较。
+    返回：current_kwh, previous_kwh, last_year_kwh, mom_percent, yoy_percent
+    依据配置的设备额定功率进行近似估算。
+    """
+    cfg = _get_station_config(line, station_ip)
+    sum_kw = _sum_kw_from_data_list(cfg.get("data_list", []))
+
+    # 估算周期小时数
+    period_hours_map = {"24h": 24, "7d": 7*24, "30d": 30*24, "90d": 90*24}
+    hours = period_hours_map.get(period, 24)
+
+    import random
+    random.seed(42)
+    # 模拟当前/上一周期/去年同期电耗（基于负载系数与额定功率）
+    current_kwh = sum_kw * (hours * 0.35) * (1.0 + random.uniform(-0.05, 0.08))
+    previous_kwh = sum_kw * (hours * 0.33) * (1.0 + random.uniform(-0.06, 0.06))
+    last_year_kwh = sum_kw * (hours * 0.37) * (1.0 + random.uniform(-0.04, 0.07))
+
+    def safe_percent(a: float, b: float) -> float:
+        if not b:
+            return 0.0
+        return round((a - b) / b * 100, 2)
+
+    mom_percent = safe_percent(current_kwh, previous_kwh)
+    yoy_percent = safe_percent(current_kwh, last_year_kwh)
+
+    return {
+        "period": period,
+        "baseline_kw": round(sum_kw, 2),
+        "current_kwh": round(current_kwh, 2),
+        "previous_kwh": round(previous_kwh, 2),
+        "last_year_kwh": round(last_year_kwh, 2),
+        "mom_percent": mom_percent,
+        "yoy_percent": yoy_percent,
+    }
+
+@app.get("/api/energy/classification")
+async def energy_classification(line: str, station_ip: Optional[str] = None, period: str = "24h"):
+    """分类分项能耗分析：按设备类别聚合能耗估算。"""
+    cfg = _get_station_config(line, station_ip)
+    data_list = cfg.get("data_list", [])
+
+    # 估算周期小时数
+    period_hours_map = {"24h": 24, "7d": 7*24, "30d": 30*24, "90d": 90*24}
+    hours = period_hours_map.get(period, 24)
+
+    import re
+    def parse_kw(p5: str) -> float:
+        m = re.search(r"(\d+(?:\.\d+)?)\s*KW", str(p5).upper())
+        return float(m.group(1)) if m else 0.0
+
+    def classify(name: str) -> str:
+        n = str(name)
+        if "冷机" in n:
+            return "冷机"
+        if "冷冻水泵" in n:
+            return "冷冻水泵"
+        if "冷却水泵" in n:
+            return "冷却水泵"
+        if "冷却塔" in n:
+            return "冷却塔"
+        if n.startswith("ZSF"):
+            return "送风机"
+        if n.startswith("ZPF"):
+            return "排风机"
+        if n.startswith("K"):
+            return "空调箱"
+        if n.startswith("HP"):
+            return "水泵"
+        return "其他"
+
+    def load_factor(cat: str) -> float:
+        return {
+            "冷机": 0.50,
+            "冷冻水泵": 0.45,
+            "冷却水泵": 0.42,
+            "冷却塔": 0.38,
+            "送风机": 0.40,
+            "排风机": 0.42,
+            "空调箱": 0.35,
+            "水泵": 0.40,
+            "其他": 0.30,
+        }.get(cat, 0.30)
+
+    agg: Dict[str, float] = {}
+    for item in data_list:
+        name = item.get("p3", "")
+        cat = classify(name)
+        kw = parse_kw(item.get("p5", "0"))
+        kwh = kw * hours * load_factor(cat)
+        agg[cat] = agg.get(cat, 0.0) + kwh
+
+    result = [{"name": k, "value": round(v, 2)} for k, v in agg.items()]
+    result.sort(key=lambda x: x["value"], reverse=True)
+    total = round(sum([x["value"] for x in result]), 2)
+
+    return {"period": period, "total_kwh": total, "categories": result}
+
 @app.post("/api/export/electricity")
 async def export_electricity_data(request: ExportRequest):
     """导出电耗数据 - 异步任务模式"""

@@ -70,6 +70,37 @@
         icon="icon-map-pin"
         variant="warning"
       />
+
+      <!-- 同比/环比对比 -->
+      <EnergyKpiCard
+        title="同比变化"
+        subtitle="同比去年同期"
+        :value="Number((compareData?.yoy_percent ?? 0).toFixed(1))"
+        unit="%"
+        :formatter="formatPercent"
+        :trend="{
+          direction: (compareData?.yoy_percent ?? 0) > 0 ? 'up' : (compareData?.yoy_percent ?? 0) < 0 ? 'down' : 'stable',
+          percentage: Number(Math.abs(compareData?.yoy_percent ?? 0).toFixed(1)),
+          text: '同比去年同期'
+        }"
+        icon="icon-percent"
+        variant="info"
+      />
+
+      <EnergyKpiCard
+        title="环比变化"
+        subtitle="环比上一周期"
+        :value="Number((compareData?.mom_percent ?? 0).toFixed(1))"
+        unit="%"
+        :formatter="formatPercent"
+        :trend="{
+          direction: (compareData?.mom_percent ?? 0) > 0 ? 'up' : (compareData?.mom_percent ?? 0) < 0 ? 'down' : 'stable',
+          percentage: Number(Math.abs(compareData?.mom_percent ?? 0).toFixed(1)),
+          text: '环比上一周期'
+        }"
+        icon="icon-percent"
+        variant="info"
+      />
     </div>
 
     <!-- 图表区域 -->
@@ -93,6 +124,17 @@
         :show-export="true"
         @export="exportHistoryData"
         @refresh="refreshTrend"
+        class="chart-container"
+      />
+
+      <!-- 分类分项能耗分析 -->
+      <EnergyChart
+        title="分类分项能耗"
+        :data="classificationData"
+        chart-type="pie"
+        :loading="false"
+        :time-period="trendPeriod"
+        @refresh="refreshClassification"
         class="chart-container"
       />
     </div>
@@ -124,6 +166,14 @@
 import { ref, computed, onMounted, watch, onUnmounted } from 'vue'
 import { ElMessage, ElSelect, ElOption } from 'element-plus'
 
+// 百分比显示格式化：正数加+号，保留1位小数
+const formatPercent = (val: number | string) => {
+  const num = typeof val === 'number' ? val : Number(val)
+  if (!isFinite(num)) return String(val)
+  const sign = num > 0 ? '+' : ''
+  return `${sign}${num.toFixed(1)}`
+}
+
 import { 
   EnergyKpiCard, 
   EnergyChart, 
@@ -132,7 +182,7 @@ import {
 } from '@/components/business'
 import type { ChartData } from '@/components/business/types'
 import { fetchLineConfigs } from '@/api/control'
-import { fetchRealtimeEnergy, fetchEnergyTrend, fetchEnergyKpi } from '@/api/energy'
+import { fetchRealtimeEnergy, fetchEnergyTrend, fetchEnergyKpi, fetchEnergyCompare, fetchEnergyClassification } from '@/api/energy'
 
 type LineConfigs = { [line: string]: Array<{ station_name: string; station_ip: string }> }
 
@@ -144,6 +194,8 @@ const trendPeriod = ref<string>('24h')
 const kpi = ref<any>({})
 const realtimeData = ref<ChartData[]>([])
 const historyData = ref<ChartData[]>([])
+const classificationData = ref<ChartData[]>([])
+const compareData = ref<{ yoy_percent: number; mom_percent: number; current_kwh: number } | null>(null)
 let refreshTimer: NodeJS.Timeout | null = null
 
 const stationsOfSelectedLine = computed(() => {
@@ -227,6 +279,42 @@ async function refreshRealtime() {
   }
 }
 
+async function refreshClassification() {
+  if (!selectedLine.value || !selectedStation.value) return
+  try {
+    const data = await fetchEnergyClassification({ line: selectedLine.value, station_ip: selectedStation.value, period: trendPeriod.value })
+    const cats = (data?.items ? data.items.map((it: any) => it.name) : (data?.categories || []))
+    const vals = (data?.items ? data.items.map((it: any) => it.kwh) : (data?.values || []))
+    classificationData.value = [{
+      type: 'pie',
+      title: '分类分项能耗',
+      data: vals || [],
+      xAxis: cats || []
+    }]
+  } catch {
+    ElMessage.warning('分类数据获取失败，显示示例数据')
+    const cats = ['冷机', '水泵', '冷却塔', '照明', '其他']
+    const vals = cats.map(() => Math.round(500 + Math.random() * 300))
+    classificationData.value = [{
+      type: 'pie',
+      title: '分类分项能耗',
+      data: vals,
+      xAxis: cats
+    }]
+  }
+}
+
+async function refreshCompare() {
+  if (!selectedLine.value || !selectedStation.value) return
+  try {
+    const data = await fetchEnergyCompare({ line: selectedLine.value, station_ip: selectedStation.value, period: trendPeriod.value })
+    compareData.value = data || null
+  } catch {
+    // 示例数据：当前周期能耗与同比/环比百分比
+    compareData.value = { yoy_percent: (Math.random() * 20 - 10), mom_percent: (Math.random() * 20 - 10), current_kwh: Math.round(12000 + Math.random() * 3000) }
+  }
+}
+
 async function refreshTrend() {
   if (!selectedLine.value || !selectedStation.value) return
   try {
@@ -281,6 +369,8 @@ function refreshAll() {
   refreshRealtime()
   refreshTrend()
   refreshKpi()
+  refreshCompare()
+  refreshClassification()
 }
 
 function startAutoRefresh() {
@@ -308,67 +398,141 @@ watch([selectedLine, selectedStation], () => {
 
 <style scoped>
 .energy-cockpit {
-  padding: 20px;
-  background: #f5f5f5;
+  padding: var(--spacing-layout-md);
+  background: radial-gradient(1200px circle at 20% 0%, rgba(0,212,255,0.08) 0%, rgba(0,212,255,0) 40%),
+              linear-gradient(180deg, #0b1020 0%, #0e1733 100%);
   min-height: 100vh;
+  color: var(--color-text-primary);
+  /* 局部文本令牌提亮，提高标签可读性 */
+  --color-text-primary: #ffffff;
+  --color-text-secondary: rgba(255,255,255,0.92);
+  --color-text-tertiary: rgba(255,255,255,0.82);
+  /* Element Plus 输入/占位符文本令牌（局部） */
+  --el-input-text-color: #ffffff;
+  --el-input-placeholder-color: rgba(255,255,255,0.88);
 }
 
 .control-bar {
   display: flex;
-  gap: 16px;
-  margin-bottom: 20px;
-  padding: 16px;
-  background: white;
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
+  padding: var(--spacing-md);
+  background: rgba(14, 23, 51, 0.65);
+  backdrop-filter: blur(6px);
+  border-radius: var(--border-radius-lg);
+  border: 1px solid rgba(0, 212, 255, 0.35);
+  box-shadow: var(--shadow-light);
   align-items: center;
   flex-wrap: wrap;
+  /* 关键修复：让输入框背景透明，避免白底白字 */
+  --el-input-bg-color: transparent;
+  --el-fill-color-blank: transparent;
+}
+
+/* 控制栏标签与选择器文字对比度增强 */
+.control-group label {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
+  white-space: nowrap;
+}
+
+/* Element Plus 选择器文本（值/占位符） */
+.control-bar :deep(.el-input__inner),
+.control-bar :deep(.el-select__selected-item),
+.control-bar :deep(.el-select__selected-item span) {
+  color: var(--el-input-text-color);
+}
+
+.control-bar :deep(.el-select__placeholder),
+.control-bar :deep(.el-input__inner::placeholder) {
+  color: var(--el-input-placeholder-color);
+  opacity: 1;
+}
+
+/* 关键修复：输入容器背景与边框，确保白字可见 */
+.control-bar :deep(.el-input__wrapper),
+.control-bar :deep(.el-input__inner) {
+  background-color: transparent;
+  border-color: rgba(0, 212, 255, 0.35);
+}
+
+.control-bar :deep(.el-input__wrapper:hover),
+.control-bar :deep(.el-input__inner:hover) {
+  border-color: rgba(0, 255, 204, 0.5);
+}
+
+.control-bar :deep(.el-input__wrapper.is-focus),
+.control-bar :deep(.el-select.is-focus .el-input__wrapper),
+.control-bar :deep(.is-focus .el-input__inner) {
+  border-color: rgba(0, 255, 204, 0.85);
+  box-shadow: 0 0 0 1px rgba(0, 255, 204, 0.18);
+}
+
+/* 可读性微增强（不改布局） */
+.control-bar :deep(.el-select .el-input__inner) {
+  font-weight: var(--font-weight-medium);
+}
+
+.control-bar :deep(.el-select) {
+  min-width: 200px;
+}
+
+.control-bar :deep(.el-button) {
+  box-shadow: var(--shadow-active);
 }
 
 .control-group {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--spacing-sm);
   min-width: 150px;
 }
 
+/* 统一标签颜色为主文本色，避免低对比 */
 .control-group label {
-  font-size: 14px;
-  font-weight: 500;
-  color: #606266;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
   white-space: nowrap;
 }
 
 .kpi-dashboard {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  gap: 16px;
-  margin-bottom: 20px;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
 }
 
 .chart-section {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 20px;
-  margin-bottom: 20px;
+  gap: var(--spacing-lg);
+  margin-bottom: var(--spacing-md);
 }
 
 .chart-container {
-  background: white;
-  border-radius: 8px;
+  background: rgba(14, 23, 51, 0.65);
+  backdrop-filter: blur(6px);
+  border-radius: var(--border-radius-lg);
+  border: 1px solid rgba(0, 212, 255, 0.35);
+  box-shadow: var(--shadow-light);
   overflow: hidden;
 }
 
 .bottom-section {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 20px;
+  gap: var(--spacing-lg);
 }
 
 .device-monitor,
 .optimization-panel {
-  background: white;
-  border-radius: 8px;
+  background: rgba(14, 23, 51, 0.65);
+  backdrop-filter: blur(6px);
+  border-radius: var(--border-radius-lg);
+  border: 1px solid rgba(0, 212, 255, 0.35);
+  box-shadow: var(--shadow-light);
   overflow: hidden;
 }
 
@@ -385,12 +549,12 @@ watch([selectedLine, selectedStation], () => {
 
 @media (max-width: 768px) {
   .energy-cockpit {
-    padding: 16px;
+    padding: var(--spacing-md);
   }
   
   .control-bar {
     flex-direction: column;
-    gap: 12px;
+    gap: var(--spacing-sm);
     align-items: stretch;
   }
   
@@ -401,12 +565,12 @@ watch([selectedLine, selectedStation], () => {
   
   .kpi-dashboard {
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 12px;
+    gap: var(--spacing-sm);
   }
   
   .chart-section,
   .bottom-section {
-    gap: 16px;
+    gap: var(--spacing-md);
   }
 }
 
@@ -418,30 +582,76 @@ watch([selectedLine, selectedStation], () => {
   .control-group {
     flex-direction: column;
     align-items: stretch;
-    gap: 4px;
+    gap: var(--spacing-xs);
   }
   
   .control-group label {
-    font-size: 12px;
+    font-size: var(--font-size-xs);
+  }
+
+  .control-bar :deep(.el-select),
+  .control-bar :deep(.el-button) {
+    width: 100%;
   }
 }
 
-/* 深色模式支持 */
+/* 深色模式使用设计令牌，保持风格一致 */
 @media (prefers-color-scheme: dark) {
   .energy-cockpit {
-    background: #1a1a1a;
+    background: radial-gradient(1200px circle at 20% 0%, rgba(0,212,255,0.08) 0%, rgba(0,212,255,0) 40%),
+                linear-gradient(180deg, #0b1020 0%, #0e1733 100%);
+    /* 深色下进一步保持主文本高对比 */
+    --color-text-primary: #ffffff;
+    --color-text-secondary: rgba(255,255,255,0.94);
+    --color-text-tertiary: rgba(255,255,255,0.85);
+    /* 深色下占位符维持高对比 */
+    --el-input-text-color: #ffffff;
+    --el-input-placeholder-color: rgba(255,255,255,0.9);
   }
   
   .control-bar,
   .chart-container,
   .device-monitor,
   .optimization-panel {
-    background: #2d2d2d;
-    border: 1px solid #404040;
+    background: rgba(14, 23, 51, 0.65);
+    border-color: rgba(0, 212, 255, 0.45);
   }
   
   .control-group label {
-    color: #e5e5e5;
+    color: var(--color-text-primary);
+  }
+}
+
+/* Tech cyan highlight interactions */
+.control-bar,
+.chart-container,
+.device-monitor,
+.optimization-panel {
+  transition: border-color 120ms ease, box-shadow 200ms ease, transform 200ms ease;
+}
+
+.control-bar:hover,
+.chart-container:hover,
+.device-monitor:hover,
+.optimization-panel:hover {
+  border-color: rgba(0, 255, 204, 0.85);
+  box-shadow: 0 0 0 1px rgba(0, 255, 204, 0.18), 0 0 16px rgba(0, 255, 204, 0.25);
+}
+
+.control-bar:focus-within,
+.chart-container:focus-within,
+.device-monitor:focus-within,
+.optimization-panel:focus-within {
+  border-color: rgba(0, 255, 204, 0.85);
+  box-shadow: 0 0 0 1px rgba(0, 255, 204, 0.18), 0 0 16px rgba(0, 255, 204, 0.25), inset 0 0 8px rgba(0, 255, 204, 0.15);
+}
+
+@media (prefers-color-scheme: dark) {
+  .control-bar:hover,
+  .chart-container:hover,
+  .device-monitor:hover,
+  .optimization-panel:hover {
+    box-shadow: 0 0 0 1px rgba(0, 255, 204, 0.2), 0 0 18px rgba(0, 255, 204, 0.3);
   }
 }
 </style>

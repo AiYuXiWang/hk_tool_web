@@ -66,77 +66,85 @@ const bodyClasses = computed(() => {
 
 <style scoped>
 .card {
-  @apply bg-white rounded-lg overflow-hidden transition-all duration-200;
-}
-
-/* 尺寸变体 */
-.card-sm {
-  @apply text-sm;
-}
-
-.card-md {
-  @apply text-base;
-}
-
-.card-lg {
-  @apply text-lg;
+  background: var(--color-background-primary);
+  border-radius: var(--border-radius-lg);
+  overflow: hidden;
+  box-shadow: var(--shadow-light);
+  transition: all var(--duration-base) var(--ease-out);
 }
 
 /* 边框样式 */
 .card-bordered {
-  @apply border border-gray-200;
+  border: 1px solid var(--color-border-secondary);
 }
 
 /* 悬停效果 */
 .card-hoverable {
-  @apply cursor-pointer;
+  cursor: pointer;
 }
 
 .card-hoverable:hover {
-  @apply shadow-lg transform -translate-y-1;
+  box-shadow: var(--shadow-hover);
+  transform: translateY(-2px);
 }
 
 /* 加载状态 */
 .card-loading {
-  @apply relative overflow-hidden;
+  position: relative;
+  overflow: hidden;
 }
 
 .card-loading::before {
   content: '';
-  @apply absolute inset-0 bg-gradient-to-r from-transparent via-white to-transparent opacity-30;
+  background: linear-gradient(90deg, transparent 25%, var(--color-background-quaternary) 50%, transparent 75%);
+  opacity: 0.3;
   animation: shimmer 1.5s infinite;
   transform: translateX(-100%);
+  position: absolute;
+  inset: 0;
 }
 
 /* 卡片头部 */
 .card-header {
-  @apply flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-gray-50;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacing-md) var(--spacing-lg);
+  border-bottom: 1px solid var(--color-border-secondary);
+  background: var(--color-background-secondary);
 }
 
 .card-header-content {
-  @apply flex-1;
+  flex: 1;
 }
 
 .card-title {
-  @apply text-lg font-semibold text-gray-900 m-0;
+  margin: 0;
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
 }
 
 .card-extra {
-  @apply flex items-center space-x-2;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
 }
 
 /* 卡片内容 */
 .card-body {
-  @apply relative;
+  position: relative;
 }
 
 .card-body-padded {
-  @apply p-6;
+  padding: var(--spacing-lg);
 }
 
 /* 卡片底部 */
 .card-footer {
-  @apply px-6 py-4 border-t border-gray-200 bg-gray-50;
+  padding: var(--spacing-md) var(--spacing-lg);
+  border-top: 1px solid var(--color-border-secondary);
+  background: var(--color-background-secondary);
 }
 
 /* 动画 */
@@ -149,23 +157,19 @@ const bodyClasses = computed(() => {
   }
 }
 
-/* 深色模式支持 */
+/* 深色模式支持（使用设计令牌变量） */
 @media (prefers-color-scheme: dark) {
   .card {
-    @apply bg-gray-800 border-gray-700;
+    background: var(--color-background-primary);
+    border-color: var(--color-border-secondary);
   }
-  
   .card-header,
   .card-footer {
-    @apply bg-gray-700 border-gray-600;
+    background: var(--color-background-secondary);
+    border-color: var(--color-border-secondary);
   }
-  
   .card-title {
-    @apply text-gray-100;
-  }
-  
-  .card-loading::before {
-    @apply via-gray-700;
+    color: var(--color-text-primary);
   }
 }
 
@@ -174,11 +178,10 @@ const bodyClasses = computed(() => {
   .card-header,
   .card-body-padded,
   .card-footer {
-    @apply px-4 py-3;
+    padding: var(--spacing-sm) var(--spacing-md);
   }
-  
   .card-title {
-    @apply text-base;
+    font-size: var(--font-size-base);
   }
 }
 </style>
