@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { ChartData } from '@/components/business/types'
+import { DataCache, calculateStatistics, normalizeHistoryData, type HistoryStatistics } from '@/services/dataProcessor'
 
 export interface EnergyData {
   timestamp: string
@@ -28,6 +29,12 @@ export interface EnergyDevice {
   efficiency: number
 }
 
+export interface CachedHistoryData {
+  data: any
+  statistics: HistoryStatistics
+  timestamp: number
+}
+
 export const useEnergyStore = defineStore('energy', () => {
   // 状态定义
   const realtimeData = ref<ChartData[]>([])
@@ -45,6 +52,25 @@ export const useEnergyStore = defineStore('energy', () => {
   const isLoading = ref(false)
   const error = ref<string | null>(null)
   const lastUpdateTime = ref<Date | null>(null)
+  
+  // 历史数据缓存（按时间范围分组）
+  const historyDataByRange = ref<Record<string, any>>({
+    '24h': null,
+    '7d': null,
+    '30d': null,
+    '90d': null
+  })
+  const historyStatistics = ref<HistoryStatistics>({
+    total: 0,
+    average: 0,
+    peak: 0,
+    min: 0,
+    dataQuality: 100
+  })
+  const isLoadingHistory = ref(false)
+  
+  // 创建数据缓存实例（30分钟TTL）
+  const historyCache = new DataCache<CachedHistoryData>(30 * 60 * 1000)
 
   // 计算属性
   const selectedDevice = computed(() => 
@@ -257,6 +283,84 @@ export const useEnergyStore = defineStore('energy', () => {
       fetchDevices()
     ])
   }
+  
+  // 获取历史数据（带缓存）
+  const fetchHistoryWithCache = async (
+    stationId: string, 
+    timeRange: string,
+    line?: string,
+    fetchFn?: (params: any) => Promise<any>
+  ) => {
+    const cacheKey = `${stationId}_${timeRange}_${line || 'default'}`
+    
+    // 检查缓存
+    const cached = historyCache.get(cacheKey)
+    if (cached) {
+      console.log(`[Cache Hit] 使用缓存数据: ${cacheKey}`)
+      historyDataByRange.value[timeRange] = cached.data
+      historyStatistics.value = cached.statistics
+      return cached.data
+    }
+    
+    // 缓存未命中，加载新数据
+    console.log(`[Cache Miss] 从API加载数据: ${cacheKey}`)
+    isLoadingHistory.value = true
+    setError(null)
+    
+    try {
+      // 调用提供的fetch函数或默认函数
+      const rawData = fetchFn 
+        ? await fetchFn({ line, station_ip: stationId, period: timeRange })
+        : await fetchHistoryData(stationId, timeRange)
+      
+      // 规范化数据并计算统计
+      const normalized = normalizeHistoryData(rawData)
+      const stats = normalized.statistics || calculateStatistics(normalized.values || [])
+      
+      // 更新状态
+      historyDataByRange.value[timeRange] = normalized
+      historyStatistics.value = stats
+      
+      // 缓存数据
+      historyCache.set(cacheKey, {
+        data: normalized,
+        statistics: stats,
+        timestamp: Date.now()
+      })
+      
+      return normalized
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '获取历史数据失败')
+      throw err
+    } finally {
+      isLoadingHistory.value = false
+    }
+  }
+  
+  // 清除历史数据缓存
+  const clearHistoryCache = (timeRange?: string) => {
+    if (timeRange) {
+      // 清除指定时间范围的缓存
+      historyDataByRange.value[timeRange] = null
+      // 清除相关的cache key
+      // 注意：这里需要遍历所有可能的station_id，实际使用时可以优化
+      historyCache.clear() // 简化处理，清除所有
+    } else {
+      // 清除所有历史数据缓存
+      historyDataByRange.value = {
+        '24h': null,
+        '7d': null,
+        '30d': null,
+        '90d': null
+      }
+      historyCache.clear()
+    }
+  }
+  
+  // 更新历史统计数据
+  const updateHistoryStatistics = (stats: HistoryStatistics) => {
+    historyStatistics.value = stats
+  }
 
   const clearData = () => {
     realtimeData.value = []
@@ -286,6 +390,11 @@ export const useEnergyStore = defineStore('energy', () => {
     error,
     lastUpdateTime,
     
+    // 历史数据缓存相关
+    historyDataByRange,
+    historyStatistics,
+    isLoadingHistory,
+    
     // 计算属性
     selectedDevice,
     onlineDevicesCount,
@@ -307,6 +416,11 @@ export const useEnergyStore = defineStore('energy', () => {
     fetchKpiData,
     fetchDevices,
     refreshAllData,
-    clearData
+    clearData,
+    
+    // 历史数据缓存相关方法
+    fetchHistoryWithCache,
+    clearHistoryCache,
+    updateHistoryStatistics
   }
 })
