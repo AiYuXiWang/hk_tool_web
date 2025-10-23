@@ -164,7 +164,9 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch, onUnmounted } from 'vue'
-import { ElMessage, ElSelect, ElOption } from 'element-plus'
+import { ElMessage, ElSelect, ElOption, ElButton } from 'element-plus'
+import { useToast } from '@/composables/useToast'
+import { useDataRefresh } from '@/composables/useDataRefresh'
 
 // 百分比显示格式化：正数加+号，保留1位小数
 const formatPercent = (val: number | string) => {
@@ -185,6 +187,8 @@ import { fetchLineConfigs } from '@/api/control'
 import { fetchRealtimeEnergy, fetchEnergyTrend, fetchEnergyKpi, fetchEnergyCompare, fetchEnergyClassification } from '@/api/energy'
 
 type LineConfigs = { [line: string]: Array<{ station_name: string; station_ip: string }> }
+
+const toast = useToast()
 
 const lineConfigs = ref<LineConfigs>({})
 const selectedLine = ref<string>('')
@@ -233,8 +237,10 @@ async function loadLineConfigs() {
       const stations = cfg[selectedLine.value]
       if (stations && stations.length > 0) selectedStation.value = stations[0].station_ip
     }
+    toast.success('线路配置加载成功')
   } catch (e) {
-    ElMessage.error('加载线路配置失败')
+    toast.error('加载线路配置失败，请重试')
+    console.error('Failed to load line configs:', e)
   }
 }
 
@@ -261,8 +267,8 @@ async function refreshRealtime() {
         color: '#409EFF'
       }))
     }]
-  } catch {
-    ElMessage.warning('实时数据获取失败，显示示例数据')
+  } catch (error) {
+    console.warn('实时数据获取失败，使用示例数据:', error)
     realtimeData.value = [{
       type: 'line',
       title: '实时能耗',
@@ -403,6 +409,7 @@ watch([selectedLine, selectedStation], () => {
               linear-gradient(180deg, #0b1020 0%, #0e1733 100%);
   min-height: 100vh;
   color: var(--color-text-primary);
+  animation: fadeIn 0.4s ease-out;
   /* 局部文本令牌提亮，提高标签可读性 */
   --color-text-primary: #ffffff;
   --color-text-secondary: rgba(255,255,255,0.92);
@@ -410,6 +417,17 @@ watch([selectedLine, selectedStation], () => {
   /* Element Plus 输入/占位符文本令牌（局部） */
   --el-input-text-color: #ffffff;
   --el-input-placeholder-color: rgba(255,255,255,0.88);
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .control-bar {
@@ -502,6 +520,18 @@ watch([selectedLine, selectedStation], () => {
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: var(--spacing-md);
   margin-bottom: var(--spacing-md);
+  animation: slideUp 0.5s ease-out 0.1s both;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .chart-section {
@@ -518,6 +548,14 @@ watch([selectedLine, selectedStation], () => {
   border: 1px solid rgba(0, 212, 255, 0.35);
   box-shadow: var(--shadow-light);
   overflow: hidden;
+  transition: all var(--duration-base) var(--ease-out);
+  animation: slideUp 0.6s ease-out 0.2s both;
+}
+
+.chart-container:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px rgba(0, 212, 255, 0.2);
+  border-color: rgba(0, 212, 255, 0.5);
 }
 
 .bottom-section {
@@ -534,6 +572,15 @@ watch([selectedLine, selectedStation], () => {
   border: 1px solid rgba(0, 212, 255, 0.35);
   box-shadow: var(--shadow-light);
   overflow: hidden;
+  transition: all var(--duration-base) var(--ease-out);
+  animation: slideUp 0.7s ease-out 0.3s both;
+}
+
+.device-monitor:hover,
+.optimization-panel:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px rgba(0, 212, 255, 0.2);
+  border-color: rgba(0, 212, 255, 0.5);
 }
 
 /* 响应式设计 */
