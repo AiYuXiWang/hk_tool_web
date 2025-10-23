@@ -172,6 +172,30 @@ const formattedValue = computed(() => {
   background: rgba(14, 23, 51, 0.65);
   backdrop-filter: blur(6px);
   border: 1px solid rgba(0, 212, 255, 0.35);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+}
+
+.kpi-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(0, 212, 255, 0.5), transparent);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.kpi-card:hover::before {
+  opacity: 1;
+}
+
+.kpi-card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(0, 212, 255, 0.6);
+  box-shadow: 0 8px 24px rgba(0, 212, 255, 0.2);
 }
 
 .kpi-card-content {
@@ -190,18 +214,27 @@ const formattedValue = computed(() => {
 /* 颜色变体 */
 .kpi-card-primary {
   border-left: 4px solid var(--color-primary);
+  background: linear-gradient(135deg, rgba(14, 23, 51, 0.65) 0%, rgba(24, 144, 255, 0.05) 100%);
 }
 
 .kpi-card-success {
   border-left: 4px solid var(--color-success);
+  background: linear-gradient(135deg, rgba(14, 23, 51, 0.65) 0%, rgba(82, 196, 26, 0.05) 100%);
 }
 
 .kpi-card-warning {
   border-left: 4px solid var(--color-warning);
+  background: linear-gradient(135deg, rgba(14, 23, 51, 0.65) 0%, rgba(250, 173, 20, 0.05) 100%);
 }
 
 .kpi-card-danger {
   border-left: 4px solid var(--color-error);
+  background: linear-gradient(135deg, rgba(14, 23, 51, 0.65) 0%, rgba(255, 77, 79, 0.05) 100%);
+}
+
+.kpi-card-info {
+  border-left: 4px solid var(--color-info);
+  background: linear-gradient(135deg, rgba(14, 23, 51, 0.65) 0%, rgba(0, 212, 255, 0.05) 100%);
 }
 
 /* KPI头部 */
@@ -267,6 +300,17 @@ const formattedValue = computed(() => {
 .value {
   font-size: var(--font-size-xxl);
   font-weight: var(--font-weight-bold);
+  font-variant-numeric: tabular-nums;
+  transition: all 0.3s ease;
+}
+
+@keyframes numberPulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
 }
 
 .kpi-card-sm .value {

@@ -1,0 +1,353 @@
+/**
+ * Element Plus 组件样式覆盖
+ * 用于适配能源驾驶舱的深色主题
+ */
+
+/* ==================== Message 消息提示 ==================== */
+.el-message {
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(0, 212, 255, 0.3);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  animation: messageSlideIn 0.3s ease-out;
+}
+
+@keyframes messageSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.el-message.el-message--success {
+  background-color: rgba(82, 196, 26, 0.15);
+  border-color: rgba(82, 196, 26, 0.5);
+}
+
+.el-message.el-message--warning {
+  background-color: rgba(250, 173, 20, 0.15);
+  border-color: rgba(250, 173, 20, 0.5);
+}
+
+.el-message.el-message--error {
+  background-color: rgba(255, 77, 79, 0.15);
+  border-color: rgba(255, 77, 79, 0.5);
+}
+
+.el-message.el-message--info {
+  background-color: rgba(24, 144, 255, 0.15);
+  border-color: rgba(24, 144, 255, 0.5);
+}
+
+.el-message__content {
+  color: #ffffff;
+  font-weight: 500;
+}
+
+/* ==================== Notification 通知 ==================== */
+.el-notification {
+  background-color: rgba(14, 23, 51, 0.95);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(0, 212, 255, 0.3);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+}
+
+.el-notification__title {
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.el-notification__content {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.el-notification.el-notification--success {
+  border-color: rgba(82, 196, 26, 0.5);
+}
+
+.el-notification.el-notification--warning {
+  border-color: rgba(250, 173, 20, 0.5);
+}
+
+.el-notification.el-notification--error {
+  border-color: rgba(255, 77, 79, 0.5);
+}
+
+.el-notification.el-notification--info {
+  border-color: rgba(24, 144, 255, 0.5);
+}
+
+/* ==================== Select 选择器 ==================== */
+.el-select-dropdown {
+  background-color: rgba(14, 23, 51, 0.95);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(0, 212, 255, 0.3);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.el-select-dropdown__item {
+  color: rgba(255, 255, 255, 0.85);
+  transition: all 0.2s ease;
+}
+
+.el-select-dropdown__item:hover {
+  background-color: rgba(0, 212, 255, 0.1);
+  color: #00d4ff;
+}
+
+.el-select-dropdown__item.selected {
+  background-color: rgba(0, 212, 255, 0.2);
+  color: #00d4ff;
+  font-weight: 600;
+}
+
+/* ==================== Input 输入框 ==================== */
+.el-input__wrapper {
+  transition: all 0.2s ease;
+}
+
+.el-input__wrapper:hover {
+  box-shadow: 0 0 0 1px rgba(0, 212, 255, 0.3) inset;
+}
+
+.el-input__wrapper.is-focus {
+  box-shadow: 0 0 0 1px rgba(0, 212, 255, 0.6) inset;
+}
+
+/* ==================== Button 按钮 ==================== */
+.el-button {
+  transition: all 0.2s ease;
+  font-weight: 500;
+}
+
+.el-button:hover {
+  transform: translateY(-1px);
+}
+
+.el-button:active {
+  transform: translateY(0);
+}
+
+.el-button--primary {
+  background: linear-gradient(135deg, #1890ff 0%, #00d4ff 100%);
+  border: none;
+  box-shadow: 0 4px 12px rgba(24, 144, 255, 0.3);
+}
+
+.el-button--primary:hover {
+  background: linear-gradient(135deg, #40a9ff 0%, #40e0ff 100%);
+  box-shadow: 0 6px 16px rgba(24, 144, 255, 0.4);
+}
+
+.el-button--success {
+  box-shadow: 0 4px 12px rgba(82, 196, 26, 0.3);
+}
+
+.el-button--warning {
+  box-shadow: 0 4px 12px rgba(250, 173, 20, 0.3);
+}
+
+.el-button--danger {
+  box-shadow: 0 4px 12px rgba(255, 77, 79, 0.3);
+}
+
+/* ==================== Loading 加载 ==================== */
+.el-loading-mask {
+  background-color: rgba(14, 23, 51, 0.8);
+  backdrop-filter: blur(4px);
+}
+
+.el-loading-spinner .circular {
+  stroke: #00d4ff;
+}
+
+/* ==================== Tooltip 提示 ==================== */
+.el-tooltip__popper {
+  background-color: rgba(14, 23, 51, 0.95);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(0, 212, 255, 0.3);
+  color: #ffffff;
+  padding: 8px 12px;
+  font-size: 13px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.el-tooltip__popper.is-dark {
+  background-color: rgba(14, 23, 51, 0.95);
+}
+
+/* ==================== Dialog 对话框 ==================== */
+.el-dialog {
+  background-color: rgba(14, 23, 51, 0.95);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(0, 212, 255, 0.3);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6);
+}
+
+.el-dialog__header {
+  border-bottom: 1px solid rgba(0, 212, 255, 0.2);
+}
+
+.el-dialog__title {
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.el-dialog__body {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.el-dialog__footer {
+  border-top: 1px solid rgba(0, 212, 255, 0.2);
+}
+
+/* ==================== Table 表格 ==================== */
+.el-table {
+  background-color: transparent;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.el-table th {
+  background-color: rgba(14, 23, 51, 0.6);
+  color: #ffffff;
+  font-weight: 600;
+  border-color: rgba(0, 212, 255, 0.2);
+}
+
+.el-table td {
+  border-color: rgba(0, 212, 255, 0.1);
+}
+
+.el-table tr {
+  background-color: transparent;
+}
+
+.el-table tbody tr:hover > td {
+  background-color: rgba(0, 212, 255, 0.05);
+}
+
+.el-table--striped .el-table__body tr.el-table__row--striped td {
+  background-color: rgba(255, 255, 255, 0.02);
+}
+
+/* ==================== Pagination 分页 ==================== */
+.el-pagination {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.el-pagination .el-pager li {
+  background-color: transparent;
+  color: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(0, 212, 255, 0.2);
+  transition: all 0.2s ease;
+}
+
+.el-pagination .el-pager li:hover {
+  background-color: rgba(0, 212, 255, 0.1);
+  border-color: rgba(0, 212, 255, 0.4);
+  color: #00d4ff;
+}
+
+.el-pagination .el-pager li.active {
+  background: linear-gradient(135deg, #1890ff 0%, #00d4ff 100%);
+  border-color: transparent;
+  color: #ffffff;
+}
+
+/* ==================== Tabs 标签页 ==================== */
+.el-tabs__nav-wrap {
+  border-bottom-color: rgba(0, 212, 255, 0.2);
+}
+
+.el-tabs__item {
+  color: rgba(255, 255, 255, 0.85);
+  transition: all 0.2s ease;
+}
+
+.el-tabs__item:hover {
+  color: #00d4ff;
+}
+
+.el-tabs__item.is-active {
+  color: #00d4ff;
+  font-weight: 600;
+}
+
+.el-tabs__active-bar {
+  background-color: #00d4ff;
+}
+
+/* ==================== Switch 开关 ==================== */
+.el-switch.is-checked .el-switch__core {
+  background-color: #00d4ff;
+  border-color: #00d4ff;
+}
+
+/* ==================== Radio & Checkbox ==================== */
+.el-radio__input.is-checked .el-radio__inner {
+  background-color: #00d4ff;
+  border-color: #00d4ff;
+}
+
+.el-checkbox__input.is-checked .el-checkbox__inner {
+  background-color: #00d4ff;
+  border-color: #00d4ff;
+}
+
+/* ==================== Progress 进度条 ==================== */
+.el-progress-bar__outer {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.el-progress-bar__inner {
+  background: linear-gradient(90deg, #1890ff 0%, #00d4ff 100%);
+}
+
+/* ==================== Badge 徽标 ==================== */
+.el-badge__content {
+  background-color: #ff4d4f;
+  border-color: transparent;
+  font-weight: 600;
+}
+
+.el-badge__content.is-fixed {
+  box-shadow: 0 2px 8px rgba(255, 77, 79, 0.4);
+}
+
+/* ==================== 响应式调整 ==================== */
+@media (max-width: 768px) {
+  .el-dialog {
+    width: 90% !important;
+    margin: 0 auto;
+  }
+  
+  .el-message-box {
+    width: 90%;
+  }
+}
+
+/* ==================== 滚动条样式 ==================== */
+.el-select-dropdown__wrap::-webkit-scrollbar,
+.el-table__body-wrapper::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.el-select-dropdown__wrap::-webkit-scrollbar-thumb,
+.el-table__body-wrapper::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 212, 255, 0.3);
+  border-radius: 4px;
+}
+
+.el-select-dropdown__wrap::-webkit-scrollbar-thumb:hover,
+.el-table__body-wrapper::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(0, 212, 255, 0.5);
+}
+
+.el-select-dropdown__wrap::-webkit-scrollbar-track,
+.el-table__body-wrapper::-webkit-scrollbar-track {
+  background-color: rgba(255, 255, 255, 0.05);
+}

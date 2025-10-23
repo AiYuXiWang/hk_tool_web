@@ -1,16 +1,56 @@
 <template>
   <BaseCard :title="title" class="energy-chart">
+    <template #header-extra>
+      <div class="chart-actions">
+        <button 
+          v-if="showRefresh" 
+          class="action-btn" 
+          @click="handleRefresh"
+          :disabled="loading"
+          title="刷新数据"
+        >
+          <svg 
+            class="icon" 
+            :class="{ spinning: loading }"
+            width="16" 
+            height="16" 
+            viewBox="0 0 24 24" 
+            fill="none" 
+            stroke="currentColor"
+          >
+            <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
+          </svg>
+        </button>
+        <button 
+          v-if="showExport" 
+          class="action-btn" 
+          @click="handleExport"
+          title="导出数据"
+        >
+          <svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+          </svg>
+        </button>
+      </div>
+    </template>
+    
     <div class="chart-container">
-      <div v-if="loading" class="loading-state">
-        <div class="loading-spinner"></div>
-        <p>加载中...</p>
-      </div>
-      <div v-else-if="error" class="error-state">
-        <p>{{ error }}</p>
-        <el-button @click="$emit('retry')" type="primary" size="small">
-          重试
-        </el-button>
-      </div>
+      <LoadingSkeleton v-if="loading" variant="chart" />
+      <EmptyState
+        v-else-if="error"
+        type="error"
+        :title="error"
+        :description="errorDescription"
+        action
+        action-text="重新加载"
+        @action="$emit('retry')"
+      />
+      <EmptyState
+        v-else-if="!data || data.length === 0"
+        type="no-data"
+        title="暂无数据"
+        description="当前时间段内没有可用数据"
+      />
       <div v-else ref="chartRef" class="chart" :style="{ height: height }"></div>
     </div>
     
@@ -40,7 +80,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
-import { BaseCard } from '../common'
+import { BaseCard, LoadingSkeleton, EmptyState } from '../common'
 import type { ChartData } from './types'
 import * as echarts from 'echarts'
 
@@ -49,14 +89,19 @@ interface Props {
   data?: ChartData[]
   loading?: boolean
   error?: string
+  errorDescription?: string
   height?: string
   showControls?: boolean
+  showRefresh?: boolean
+  showExport?: boolean
   chartType?: 'line' | 'bar' | 'area' | 'pie'
   timeRange?: string
 }
 
 interface Emits {
   (e: 'retry'): void
+  (e: 'refresh'): void
+  (e: 'export'): void
   (e: 'timeRangeChange', value: string): void
   (e: 'chartTypeChange', value: string): void
 }
@@ -66,13 +111,24 @@ const props = withDefaults(defineProps<Props>(), {
   data: () => [],
   loading: false,
   error: '',
+  errorDescription: '数据加载失败，请重试',
   height: '400px',
   showControls: true,
+  showRefresh: true,
+  showExport: false,
   chartType: 'line',
   timeRange: '24h'
 })
 
 const emit = defineEmits<Emits>()
+
+const handleRefresh = () => {
+  emit('refresh')
+}
+
+const handleExport = () => {
+  emit('export')
+}
 
 const chartRef = ref<HTMLElement>()
 const selectedTimeRange = ref(props.timeRange)
@@ -163,16 +219,42 @@ const buildOption = (chartDataList: ChartData[]) => {
     const values = cd.data || []
     const pieData = categories.map((name, idx) => ({ name, value: values[idx] ?? 0 }))
     return {
-      tooltip: { trigger: 'item' },
-      legend: { top: 'bottom' },
+      tooltip: { 
+        trigger: 'item',
+        formatter: '{b}: {c} ({d}%)',
+        backgroundColor: 'rgba(14, 23, 51, 0.9)',
+        borderColor: 'rgba(0, 212, 255, 0.5)',
+        textStyle: { color: '#fff' }
+      },
+      legend: { 
+        top: 'bottom',
+        textStyle: { 
+          color: getCssVar('--color-text-secondary', '#9bb3c6')
+        }
+      },
       series: [{
         name: cd.title || '分类分项能耗',
         type: 'pie',
         radius: ['40%', '70%'],
         center: ['50%', '50%'],
         avoidLabelOverlap: true,
-        itemStyle: { borderRadius: 6, borderColor: '#fff', borderWidth: 1 },
-        label: { show: true, formatter: '{b}: {d}%' },
+        itemStyle: { 
+          borderRadius: 8, 
+          borderColor: 'rgba(14, 23, 51, 0.5)', 
+          borderWidth: 2 
+        },
+        emphasis: {
+          itemStyle: {
+            shadowBlur: 10,
+            shadowOffsetX: 0,
+            shadowColor: 'rgba(0, 212, 255, 0.5)'
+          }
+        },
+        label: { 
+          show: true, 
+          formatter: '{b}: {d}%',
+          color: getCssVar('--color-text-primary', '#fff')
+        },
         data: pieData
       }]
     }
@@ -180,9 +262,54 @@ const buildOption = (chartDataList: ChartData[]) => {
 
   // 线/柱/面积图
   const option: any = {
-    tooltip: { trigger: 'axis' },
-    xAxis: { type: 'category', data: cd.xAxis || [] },
-    yAxis: { type: 'value' },
+    tooltip: { 
+      trigger: 'axis',
+      backgroundColor: 'rgba(14, 23, 51, 0.9)',
+      borderColor: 'rgba(0, 212, 255, 0.5)',
+      textStyle: { color: '#fff' },
+      axisPointer: {
+        type: 'cross',
+        label: {
+          backgroundColor: 'rgba(0, 212, 255, 0.8)'
+        }
+      }
+    },
+    grid: {
+      left: '3%',
+      right: '4%',
+      bottom: '3%',
+      containLabel: true
+    },
+    xAxis: { 
+      type: 'category', 
+      data: cd.xAxis || [],
+      axisLine: { 
+        lineStyle: { 
+          color: getCssVar('--color-border-primary', '#1e2a3a')
+        }
+      },
+      axisLabel: { 
+        color: getCssVar('--color-text-secondary', '#9bb3c6'),
+        rotate: cd.xAxis && cd.xAxis.length > 12 ? 45 : 0
+      }
+    },
+    yAxis: { 
+      type: 'value',
+      axisLine: { 
+        lineStyle: { 
+          color: getCssVar('--color-border-primary', '#1e2a3a')
+        }
+      },
+      axisLabel: { 
+        color: getCssVar('--color-text-secondary', '#9bb3c6')
+      },
+      splitLine: { 
+        lineStyle: { 
+          color: getCssVar('--color-border-secondary', '#142033'),
+          type: 'dashed'
+        }
+      }
+    },
     series: []
   }
 
@@ -278,6 +405,58 @@ onUnmounted(() => {
   height: 100%;
 }
 
+.chart-actions {
+  display: flex;
+  gap: var(--spacing-sm);
+  align-items: center;
+}
+
+.action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-xs);
+  background: transparent;
+  border: 1px solid rgba(0, 212, 255, 0.3);
+  border-radius: var(--border-radius-sm);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all var(--duration-base) var(--ease-out);
+}
+
+.action-btn:hover:not(:disabled) {
+  background: rgba(0, 212, 255, 0.1);
+  border-color: rgba(0, 212, 255, 0.6);
+  color: var(--color-primary);
+  transform: translateY(-1px);
+}
+
+.action-btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.action-btn .icon {
+  stroke-width: 2;
+}
+
+.action-btn .icon.spinning {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .chart-container {
   position: relative;
   min-height: 300px;
@@ -285,26 +464,6 @@ onUnmounted(() => {
 
 .chart {
   width: 100%;
-}
-
-.loading-state,
-.error-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  height: 300px;
-  color: var(--color-text-secondary);
-}
-
-.loading-spinner {
-  width: 32px;
-  height: 32px;
-  border: 3px solid var(--color-border-primary);
-  border-top: 3px solid var(--color-primary);
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-  margin-bottom: 16px;
 }
 
 .chart-controls {
