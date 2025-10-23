@@ -1,50 +1,66 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
+import asyncio
+import logging
+import os
+import time
+from datetime import datetime
+from pathlib import Path
+from threading import RLock
+from typing import Any, Dict, List, Optional
+
+from dotenv import load_dotenv
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from typing import List, Dict, Any, Optional
-import asyncio
-import logging
-from datetime import datetime
-import os
-import time
-from threading import RLock
-from dotenv import load_dotenv
-from pathlib import Path
+
 load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env", override=True)
-import requests
 import hashlib
+
+import requests
+
 import config_electricity
+from audit_service import audit_service
+from backend.app.api.data_upload import router as data_upload_router
+from backend.app.api.energy_dashboard import router as energy_dashboard_router
+from backend.app.core.dependencies import initialize_services, shutdown_services
+from backend.app.middleware.error_handler import ErrorHandlerMiddleware
+from backend.app.middleware.logging import (
+    RequestLoggingMiddleware,
+    StructuredLoggingMiddleware,
+)
+from backend.app.middleware.rate_limit import (
+    AdaptiveRateLimitMiddleware,
+    RateLimitMiddleware,
+)
+from backend.app.middleware.response import (
+    ResponseCompressionMiddleware,
+    ResponseStandardizationMiddleware,
+)
+from backend.app.middleware.validation import RequestValidationMiddleware
+from control_service import device_control_service
+from db_config import ensure_operation_log_table, execute_query, insert_operation_log
 from export_service import ElectricityExportService, SensorDataExportService
+from logger_config import app_logger
 from models import (
-    ExportRequest, SensorExportRequest, WriteCommand, 
-    RealtimeQuery, BatchWriteRequest
+    BatchWriteRequest,
+    ExportRequest,
+    RealtimeQuery,
+    SensorExportRequest,
+    WriteCommand,
 )
 from task_manager import task_manager
-from logger_config import app_logger
-from db_config import ensure_operation_log_table, insert_operation_log, execute_query
-from control_service import device_control_service
-from audit_service import audit_service
-from backend.app.api.energy_dashboard import router as energy_dashboard_router
-from backend.app.api.data_upload import router as data_upload_router
-from backend.app.middleware.response import ResponseStandardizationMiddleware, ResponseCompressionMiddleware
-from backend.app.middleware.error_handler import ErrorHandlerMiddleware
-from backend.app.middleware.validation import RequestValidationMiddleware
-from backend.app.middleware.logging import RequestLoggingMiddleware, StructuredLoggingMiddleware
-from backend.app.middleware.rate_limit import RateLimitMiddleware, AdaptiveRateLimitMiddleware
-from backend.app.core.dependencies import initialize_services, shutdown_services
-
 
 # 使用配置好的logger
 logger = app_logger
 
 app = FastAPI(title="环控平台维护工具Web版", description="将桌面端环控平台维护工具迁移为Web应用")
 
-# 注册能源管理驾驶舱API路由
-app.include_router(energy_dashboard_router, prefix="/api/energy-dashboard", tags=["能源管理驾驶舱"])
+# 注册能源驾驶舱API路由
+app.include_router(energy_dashboard_router, prefix="/api/energy", tags=["能源驾驶舱"])
 
 # 注册数据上传API路由
 app.include_router(data_upload_router, prefix="/api/data", tags=["数据管理"])
+
 
 @app.on_event("startup")
 async def _startup_check():
@@ -62,13 +78,14 @@ async def _startup_check():
                 logger.warning(f"[startup] .env fallback failed: {_e}")
     except Exception as _e:
         logger.warning(f"[startup] token check error: {_e}")
-    
+
     # 初始化服务
     try:
         await initialize_services()
         logger.info("Services initialized successfully")
     except Exception as e:
         logger.error(f"Failed to initialize services: {e}")
+
 
 @app.on_event("shutdown")
 async def _shutdown_cleanup():
@@ -78,6 +95,7 @@ async def _shutdown_cleanup():
         logger.info("Services shutdown successfully")
     except Exception as e:
         logger.error(f"Failed to shutdown services: {e}")
+
 
 # 确保审计表存在
 try:
@@ -95,10 +113,10 @@ app.add_middleware(ResponseStandardizationMiddleware)
 
 # 3. 限流中间件
 rate_limit_rules = {
-    "/api/energy-dashboard": "200/minute",  # 能源管理API
-    "/api/data/upload": "10/minute",        # 文件上传API
-    "/api/data/export": "20/minute",        # 数据导出API
-    "/api/auth": "30/minute",               # 认证API
+    "/api/energy": "200/minute",  # 能源驾驶舱API
+    "/api/data/upload": "10/minute",  # 文件上传API
+    "/api/data/export": "20/minute",  # 数据导出API
+    "/api/auth": "30/minute",  # 认证API
 }
 
 app.add_middleware(
@@ -126,18 +144,18 @@ app.add_middleware(StructuredLoggingMiddleware)
 
 # 6. 请求验证中间件
 app.add_middleware(
-     RequestValidationMiddleware,
-     max_content_length=50 * 1024 * 1024,  # 50MB
-     max_file_size=20 * 1024 * 1024,       # 20MB
-     allowed_file_types=[".xlsx", ".csv", ".json", ".txt", ".pdf"],
-     whitelist_paths=[
-         "/control/device-tree",
-         "/control/device-tree-test",
-         "/control/points/real-time",  # 加入实时点位查询白名单，避免 '#' 被误判为SQL注释
-         "/control/points/write",      # 加入写值接口白名单，避免安全检查拦截导致无日志
-         "/api/export",
-     ],  # 设备树API白名单与导出端点
- )
+    RequestValidationMiddleware,
+    max_content_length=50 * 1024 * 1024,  # 50MB
+    max_file_size=20 * 1024 * 1024,  # 20MB
+    allowed_file_types=[".xlsx", ".csv", ".json", ".txt", ".pdf"],
+    whitelist_paths=[
+        "/control/device-tree",
+        "/control/device-tree-test",
+        "/control/points/real-time",  # 加入实时点位查询白名单，避免 '#' 被误判为SQL注释
+        "/control/points/write",  # 加入写值接口白名单，避免安全检查拦截导致无日志
+        "/api/export",
+    ],  # 设备树API白名单与导出端点
+)
 
 # 7. 错误处理中间件
 app.add_middleware(ErrorHandlerMiddleware)
@@ -155,12 +173,10 @@ app.add_middleware(
 electricity_service = ElectricityExportService()
 sensor_service = SensorDataExportService()
 
+
 @app.get("/")
 async def root():
     return {"message": "环控平台维护工具Web版 API"}
-
-
-
 
 
 @app.get("/api/lines")
@@ -173,20 +189,21 @@ async def get_lines():
         logger.error(f"获取线路配置失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.get("/api/line-config/{line_name}")
 async def get_line_config(line_name: str):
     """获取指定线路的配置详情"""
     try:
         if line_name not in config_electricity.line_configs:
             raise HTTPException(status_code=404, detail=f"线路 {line_name} 不存在")
-        
+
         config = config_electricity.line_configs[line_name]
         # 只返回基本信息，不返回完整的data_list以减少数据量
         simplified_config = {}
         for station_name, station_config in config.items():
             simplified_config[station_name] = {
                 "ip": station_config["ip"],
-                "station": station_config["station"]
+                "station": station_config["station"],
             }
         return {"config": simplified_config}
     except HTTPException:
@@ -194,6 +211,7 @@ async def get_line_config(line_name: str):
     except Exception as e:
         logger.error(f"获取线路配置详情失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/api/config/line_configs")
 async def get_line_configs():
@@ -204,15 +222,18 @@ async def get_line_configs():
         for line_name, line_config in config_electricity.line_configs.items():
             stations = []
             for station_name, station_config in line_config.items():
-                stations.append({
-                    "station_name": station_config.get("station", station_name),
-                    "station_ip": station_config["ip"]
-                })
+                stations.append(
+                    {
+                        "station_name": station_config.get("station", station_name),
+                        "station_ip": station_config["ip"],
+                    }
+                )
             result[line_name] = stations
         return result
     except Exception as e:
         logger.error(f"获取线路配置失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 # ===================== 能源驾驶舱接口 =====================
 def _get_station_config(line: str, station_ip: Optional[str]) -> Dict[str, Any]:
@@ -232,9 +253,11 @@ def _get_station_config(line: str, station_ip: Optional[str]) -> Dict[str, Any]:
         raise HTTPException(status_code=404, detail=f"车站 {station_ip} 未找到")
     return target
 
+
 def _sum_kw_from_data_list(data_list: List[Dict[str, Any]]) -> float:
     """从 data_list 的 p5 字段中解析额定功率并求和 (单位: kW)"""
     import re
+
     total_kw = 0.0
     for item in data_list or []:
         p5 = str(item.get("p5", "")).upper()
@@ -246,6 +269,7 @@ def _sum_kw_from_data_list(data_list: List[Dict[str, Any]]) -> float:
                 pass
     return total_kw
 
+
 @app.get("/api/energy/kpi")
 async def get_energy_kpi(line: str, station_ip: Optional[str] = None):
     """能耗指标 KPI 看板数据。
@@ -256,6 +280,7 @@ async def get_energy_kpi(line: str, station_ip: Optional[str] = None):
     cfg = _get_station_config(line, station_ip)
     sum_kw = _sum_kw_from_data_list(cfg.get("data_list", []))
     from datetime import datetime
+
     now = datetime.now()
     hours_today = now.hour + now.minute / 60.0
     utilization = 0.35  # 近似平均负荷系数
@@ -270,6 +295,7 @@ async def get_energy_kpi(line: str, station_ip: Optional[str] = None):
         "station_count": station_count,
     }
 
+
 @app.get("/api/energy/realtime")
 async def get_energy_realtime(line: str, station_ip: Optional[str] = None):
     """实时能耗监测数据，返回最近 60 分钟按 5 分钟分辨率的功率曲线。"""
@@ -277,6 +303,7 @@ async def get_energy_realtime(line: str, station_ip: Optional[str] = None):
     sum_kw = _sum_kw_from_data_list(cfg.get("data_list", []))
     import math
     from datetime import datetime, timedelta
+
     now = datetime.now()
     timestamps: List[str] = []
     points: List[float] = []
@@ -287,12 +314,16 @@ async def get_energy_realtime(line: str, station_ip: Optional[str] = None):
         points.append(round(val, 2))
     return {"timestamps": timestamps, "series": [{"name": "总功率", "points": points}]}
 
+
 @app.get("/api/energy/trend")
-async def get_energy_trend(line: str, station_ip: Optional[str] = None, period: str = "24h"):
+async def get_energy_trend(
+    line: str, station_ip: Optional[str] = None, period: str = "24h"
+):
     """历史能耗趋势：支持 24h / 7d / 30d。返回按周期聚合的 kWh。"""
     cfg = _get_station_config(line, station_ip)
     sum_kw = _sum_kw_from_data_list(cfg.get("data_list", []))
     import math
+
     timestamps: List[str] = []
     values: List[float] = []
     base_util = 0.35
@@ -319,34 +350,45 @@ async def get_energy_trend(line: str, station_ip: Optional[str] = None, period: 
             values.append(round(kwh, 2))
     return {"timestamps": timestamps, "values": values}
 
+
 @app.get("/api/energy/suggestions")
 async def get_energy_suggestions(line: str, station_ip: Optional[str] = None):
     """节能优化建议：基于设备额定功率与通用策略生成可执行建议。"""
     cfg = _get_station_config(line, station_ip)
     sum_kw = _sum_kw_from_data_list(cfg.get("data_list", []))
     from datetime import datetime
+
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
     items: List[Dict[str, str]] = []
     if sum_kw > 300:
-        items.append({
+        items.append(
+            {
+                "timestamp": now_str,
+                "title": "峰谷移峰",
+                "desc": "将冷机与大功率水泵运行调整至谷段，削减尖峰负荷。",
+            }
+        )
+    items.append(
+        {
             "timestamp": now_str,
-            "title": "峰谷移峰",
-            "desc": "将冷机与大功率水泵运行调整至谷段，削减尖峰负荷。",
-        })
-    items.append({
-        "timestamp": now_str,
-        "title": "夜间空载优化",
-        "desc": "低客流时段下调新风量，优化冷却塔风机启停。",
-    })
-    items.append({
-        "timestamp": now_str,
-        "title": "设备分时策略",
-        "desc": "对风机/水泵实施分时启停，提升能效比。",
-    })
+            "title": "夜间空载优化",
+            "desc": "低客流时段下调新风量，优化冷却塔风机启停。",
+        }
+    )
+    items.append(
+        {
+            "timestamp": now_str,
+            "title": "设备分时策略",
+            "desc": "对风机/水泵实施分时启停，提升能效比。",
+        }
+    )
     return {"items": items}
 
+
 @app.get("/api/energy/compare")
-async def energy_compare(line: str, station_ip: Optional[str] = None, period: str = "24h"):
+async def energy_compare(
+    line: str, station_ip: Optional[str] = None, period: str = "24h"
+):
     """能耗同比/环比比较。
     返回：current_kwh, previous_kwh, last_year_kwh, mom_percent, yoy_percent
     依据配置的设备额定功率进行近似估算。
@@ -355,10 +397,11 @@ async def energy_compare(line: str, station_ip: Optional[str] = None, period: st
     sum_kw = _sum_kw_from_data_list(cfg.get("data_list", []))
 
     # 估算周期小时数
-    period_hours_map = {"24h": 24, "7d": 7*24, "30d": 30*24, "90d": 90*24}
+    period_hours_map = {"24h": 24, "7d": 7 * 24, "30d": 30 * 24, "90d": 90 * 24}
     hours = period_hours_map.get(period, 24)
 
     import random
+
     random.seed(42)
     # 模拟当前/上一周期/去年同期电耗（基于负载系数与额定功率）
     current_kwh = sum_kw * (hours * 0.35) * (1.0 + random.uniform(-0.05, 0.08))
@@ -383,17 +426,21 @@ async def energy_compare(line: str, station_ip: Optional[str] = None, period: st
         "yoy_percent": yoy_percent,
     }
 
+
 @app.get("/api/energy/classification")
-async def energy_classification(line: str, station_ip: Optional[str] = None, period: str = "24h"):
+async def energy_classification(
+    line: str, station_ip: Optional[str] = None, period: str = "24h"
+):
     """分类分项能耗分析：按设备类别聚合能耗估算。"""
     cfg = _get_station_config(line, station_ip)
     data_list = cfg.get("data_list", [])
 
     # 估算周期小时数
-    period_hours_map = {"24h": 24, "7d": 7*24, "30d": 30*24, "90d": 90*24}
+    period_hours_map = {"24h": 24, "7d": 7 * 24, "30d": 30 * 24, "90d": 90 * 24}
     hours = period_hours_map.get(period, 24)
 
     import re
+
     def parse_kw(p5: str) -> float:
         m = re.search(r"(\d+(?:\.\d+)?)\s*KW", str(p5).upper())
         return float(m.group(1)) if m else 0.0
@@ -445,48 +492,47 @@ async def energy_classification(line: str, station_ip: Optional[str] = None, per
 
     return {"period": period, "total_kwh": total, "categories": result}
 
+
 @app.post("/api/export/electricity")
 async def export_electricity_data(request: ExportRequest):
     """导出电耗数据 - 异步任务模式"""
     try:
-        logger.info(f"开始导出电耗数据: 线路={request.line}, 时间范围={request.start_time} 到 {request.end_time}")
-        
+        logger.info(
+            f"开始导出电耗数据: 线路={request.line}, 时间范围={request.start_time} 到 {request.end_time}"
+        )
+
         # 启动异步导出任务
         result = electricity_service.start_async_export(
-            request.line, 
-            request.start_time, 
-            request.end_time
+            request.line, request.start_time, request.end_time
         )
-        
+
         if "error" in result:
             raise HTTPException(status_code=500, detail=result["error"])
-        
-        return {
-            "success": True,
-            "message": "导出任务已启动",
-            "task_id": result["task_id"]
-        }
+
+        return {"success": True, "message": "导出任务已启动", "task_id": result["task_id"]}
     except Exception as e:
         logger.error(f"启动导出任务失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/api/export/sensor")
 async def export_sensor_data(request: SensorExportRequest):
     """导出传感器数据"""
     try:
-        logger.info(f"开始导出传感器数据: 线路={request.line}, 时间范围={request.start_time} 到 {request.end_time}")
-        
+        logger.info(
+            f"开始导出传感器数据: 线路={request.line}, 时间范围={request.start_time} 到 {request.end_time}"
+        )
+
         # 异步执行导出任务
         result = await sensor_service.export_data_async(
-            request.line, 
-            request.start_time, 
-            request.end_time
+            request.line, request.start_time, request.end_time
         )
-        
+
         return result
     except Exception as e:
         logger.error(f"导出传感器数据失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/api/tasks/{task_id}")
 async def get_task_status(task_id: str):
@@ -495,7 +541,7 @@ async def get_task_status(task_id: str):
         task = task_manager.get_task(task_id)
         if not task:
             raise HTTPException(status_code=404, detail="任务不存在")
-        
+
         last_update = task.completed_at or task.started_at or task.created_at
         return {
             "task_id": task_id,
@@ -504,15 +550,18 @@ async def get_task_status(task_id: str):
                 "current": task.progress.current,
                 "total": task.progress.total,
                 "percentage": task.progress.percentage,
-                "message": task.progress.message
+                "message": task.progress.message,
             },
             "result": task.result_data,
             "created_at": task.created_at.isoformat(),
-            "updated_at": last_update.isoformat() if last_update else task.created_at.isoformat()
+            "updated_at": last_update.isoformat()
+            if last_update
+            else task.created_at.isoformat(),
         }
     except Exception as e:
         logger.error(f"获取任务状态失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/api/tasks")
 async def list_tasks():
@@ -529,18 +578,23 @@ async def list_tasks():
                     t = t.to_dict()
                 except Exception:
                     continue
-            last_update = t.get("completed_at") or t.get("started_at") or t.get("created_at")
-            normalized.append({
-                "task_id": t.get("task_id"),
-                "status": t.get("status"),
-                "progress": t.get("progress"),
-                "created_at": t.get("created_at"),
-                "updated_at": last_update,
-            })
+            last_update = (
+                t.get("completed_at") or t.get("started_at") or t.get("created_at")
+            )
+            normalized.append(
+                {
+                    "task_id": t.get("task_id"),
+                    "status": t.get("status"),
+                    "progress": t.get("progress"),
+                    "created_at": t.get("created_at"),
+                    "updated_at": last_update,
+                }
+            )
         return normalized
     except Exception as e:
         logger.error(f"获取任务列表失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.delete("/api/tasks/{task_id}")
 async def cancel_task(task_id: str):
@@ -549,11 +603,12 @@ async def cancel_task(task_id: str):
         success = task_manager.cancel_task(task_id)
         if not success:
             raise HTTPException(status_code=404, detail="任务不存在或无法取消")
-        
+
         return {"success": True, "message": "任务已取消"}
     except Exception as e:
         logger.error(f"取消任务失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/api/download/{filename}")
 async def download_file(filename: str):
@@ -562,12 +617,12 @@ async def download_file(filename: str):
         # 检查文件是否存在
         if not os.path.exists(filename):
             raise HTTPException(status_code=404, detail=f"文件 {filename} 不存在")
-        
+
         # 返回文件响应
         return FileResponse(
             path=filename,
             filename=filename,
-            media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
     except HTTPException:
         raise
@@ -575,7 +630,9 @@ async def download_file(filename: str):
         logger.error(f"下载文件失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 # ===================== 设备控制模块：使用新的服务架构 =====================
+
 
 @app.get("/control/device-tree")
 async def get_device_tree_endpoint(request: Request, station_ip: Optional[str] = None):
@@ -588,25 +645,35 @@ async def get_device_tree_endpoint(request: Request, station_ip: Optional[str] =
         logger.error(f"获取设备树失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.get("/control/points/real-time")
-async def get_point_realtime_endpoint(object_code: str, data_code: str, request: Request):
+async def get_point_realtime_endpoint(
+    object_code: str, data_code: str, request: Request
+):
     """点位实时值查询"""
     operator_id = request.headers.get("x-operator-id", "system")
     # 读取站点IP（X-Station-Ip），用于按车站进行实时查询
-    station_ip = request.headers.get("x-station-ip") or request.headers.get("X-Station-Ip")
+    station_ip = request.headers.get("x-station-ip") or request.headers.get(
+        "X-Station-Ip"
+    )
     try:
-        result = await device_control_service.query_realtime_point(object_code, data_code, operator_id, station_ip)
+        result = await device_control_service.query_realtime_point(
+            object_code, data_code, operator_id, station_ip
+        )
         return result.dict()
     except Exception as e:
         logger.error(f"实时查询失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/control/points/write")
 async def write_points_endpoint(commands: List[WriteCommand], request: Request):
     """批量写值控制"""
     operator_id = request.headers.get("x-operator-id", "system")
     # 从请求头读取站点IP（X-Station-Ip），用于按车站路由写值
-    station_ip = request.headers.get("x-station-ip") or request.headers.get("X-Station-Ip")
+    station_ip = request.headers.get("x-station-ip") or request.headers.get(
+        "X-Station-Ip"
+    )
     # 无站点不允许回退到默认：强制要求请求头携带 X-Station-Ip
     if not station_ip or not str(station_ip).strip():
         logger.warning("批量写值请求缺少 X-Station-Ip，已拒绝")
@@ -616,20 +683,29 @@ async def write_points_endpoint(commands: List[WriteCommand], request: Request):
         sample = []
         for cmd in commands[:5]:
             try:
-                pk = getattr(cmd, "point_key", None) or f"{getattr(cmd, 'object_code', '')}:{getattr(cmd, 'data_code', '')}"
+                pk = (
+                    getattr(cmd, "point_key", None)
+                    or f"{getattr(cmd, 'object_code', '')}:{getattr(cmd, 'data_code', '')}"
+                )
                 cv = getattr(cmd, "control_value", None)
                 sample.append(f"{pk}={cv}")
             except Exception:
                 sample.append("<parse_error>")
-        logger.info(f"批量写值请求: operator_id={operator_id}, count={len(commands)}, station_ip={station_ip or ''}, sample=[{'; '.join(sample)}]")
+        logger.info(
+            f"批量写值请求: operator_id={operator_id}, count={len(commands)}, station_ip={station_ip or ''}, sample=[{'; '.join(sample)}]"
+        )
     except Exception as _e:
         logger.debug(f"记录批量写值入口日志失败: {_e}")
     # 跳过写前读取（可选）：通过请求头控制
-    skip_before_hdr = request.headers.get("x-skip-before") or request.headers.get("X-Skip-Before")
+    skip_before_hdr = request.headers.get("x-skip-before") or request.headers.get(
+        "X-Skip-Before"
+    )
     skip_before = str(skip_before_hdr).strip().lower() in {"1", "true", "yes"}
 
     # 全局超时保护：避免平台阻塞导致前端超时
-    timeout_ms_hdr = request.headers.get("x-timeout-ms") or request.headers.get("X-Timeout-Ms")
+    timeout_ms_hdr = request.headers.get("x-timeout-ms") or request.headers.get(
+        "X-Timeout-Ms"
+    )
     try:
         timeout_ms = int(timeout_ms_hdr) if timeout_ms_hdr is not None else 10000
     except Exception:
@@ -640,16 +716,21 @@ async def write_points_endpoint(commands: List[WriteCommand], request: Request):
 
     try:
         result = await asyncio.wait_for(
-            device_control_service.batch_write_points(commands, operator_id, station_ip, skip_before=skip_before),
+            device_control_service.batch_write_points(
+                commands, operator_id, station_ip, skip_before=skip_before
+            ),
             timeout=timeout_sec,
         )
         return result.dict()
     except asyncio.TimeoutError:
-        logger.warning(f"批量写值处理超时: operator_id={operator_id}, count={len(commands)}, station_ip={station_ip}, timeout_ms={timeout_ms}, skip_before={skip_before}")
+        logger.warning(
+            f"批量写值处理超时: operator_id={operator_id}, count={len(commands)}, station_ip={station_ip}, timeout_ms={timeout_ms}, skip_before={skip_before}"
+        )
         raise HTTPException(status_code=504, detail="批量写值处理超时，请稍后重试或减少重试次数")
     except Exception as e:
         logger.error(f"批量写值失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/control/points/default")
 async def get_default_points_endpoint(object_codes: str, request: Request):
@@ -662,7 +743,9 @@ async def get_default_points_endpoint(object_codes: str, request: Request):
         logger.error(f"获取点位列表失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 # ===================== 审计日志接口 =====================
+
 
 @app.get("/audit/logs")
 async def get_audit_logs(
@@ -671,7 +754,7 @@ async def get_audit_logs(
     object_code: Optional[str] = None,
     result: Optional[str] = None,
     limit: int = 100,
-    offset: int = 0
+    offset: int = 0,
 ):
     """查询操作审计日志"""
     try:
@@ -681,25 +764,29 @@ async def get_audit_logs(
             object_code=object_code,
             result=result,
             limit=limit,
-            offset=offset
+            offset=offset,
         )
         return {
             "logs": [log.dict() for log in logs],
             "total": total,
             "limit": limit,
-            "offset": offset
+            "offset": offset,
         }
     except Exception as e:
         logger.error(f"查询审计日志失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 PLATFORM_BASE = "http://192.168.100.3"
 # 实时查询使用 9801 端口的新接口；写值仍走默认端口
-SELECT_URL = "http://192.168.100.3:9801/api/objectPointInfo/selectObjectPointValueByDataCode"
+SELECT_URL = (
+    "http://192.168.100.3:9801/api/objectPointInfo/selectObjectPointValueByDataCode"
+)
 WRITE_URL = f"{PLATFORM_BASE}/api/objectPointInfo/writePointValue"
 LOGIN_URL = "http://192.168.100.3:9801/api/user/login"
 # 固定Token兜底（仅用于联通性验证；后续回滚至.env加载）
 HK_TOKEN_FALLBACK = "eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJhaXRlc3QiLCJhdWRpZW5jZSI6IndlYiIsImNyZWF0ZWQiOjE3NTUyMjIzOTM0ODUsIm5pY2tOYW1lIjoi57O757uf566h55CG5ZGYIiwiYXV0aFRva2VuIjpudWxsLCJjb21wYW55IjoyNTEsImV4cCI6MTAzOTUyMjIzOTMsInVzZXJJZCI6NDA1fQ.ulpIECFHg11RMmGhkYSqwwgNaVJ1ZyzG8vwuziVL9MIADQ07Sr1H6TQ7-5-qtnl3raTRQ_qSmjF4CZeWgoosoQ"
+
 
 def _get_token_effective() -> str:
     try:
@@ -709,6 +796,7 @@ def _get_token_effective() -> str:
     except Exception:
         pass
     return HK_TOKEN_FALLBACK
+
 
 def _get_token() -> str:
     # 优先读环境变量；若为空则回退解析 .env
@@ -722,9 +810,14 @@ def _get_token() -> str:
             content = env_path.read_text(encoding="utf-8")
             # 解析格式：HK_PLATFORM_TOKEN = "xxx" 或 HK_PLATFORM_TOKEN=xxx
             import re
-            m = re.search(r"^\\s*HK_PLATFORM_TOKEN\\s*=\\s*[\"']?([^\"'\
+
+            m = re.search(
+                r"^\\s*HK_PLATFORM_TOKEN\\s*=\\s*[\"']?([^\"'\
 \
-]+)[\"']?\\s*$", content, re.MULTILINE)
+]+)[\"']?\\s*$",
+                content,
+                re.MULTILINE,
+            )
             if m:
                 token = m.group(1).strip()
                 if token:
@@ -737,10 +830,12 @@ def _get_token() -> str:
     logger.error("缺少 HK_PLATFORM_TOKEN（环境变量与 .env 均未获取到）")
     raise HTTPException(status_code=500, detail="服务端缺少平台访问凭证，请配置 HK_PLATFORM_TOKEN")
 
+
 # ============ 动态登录获取 Token（缓存） ============
 _TOKEN_TTL_SEC = 1200  # 20 分钟
 _token_cache = {"value": None, "exp": 0.0}
 _token_lock = RLock()
+
 
 def _login_platform() -> str:
     """调用平台登录接口获取实时 token，不记录明文。"""
@@ -756,10 +851,17 @@ def _login_platform() -> str:
             timeout=6.0,
         )
         if resp.status_code != 200:
-            logger.error(f"登录接口HTTP错误 code={resp.status_code}, body_head={(resp.text[:200] if resp.text else '')}")
+            logger.error(
+                f"登录接口HTTP错误 code={resp.status_code}, body_head={(resp.text[:200] if resp.text else '')}"
+            )
             raise HTTPException(status_code=502, detail="平台登录失败(HTTP)")
         data = resp.json() if resp.text else {}
-        if isinstance(data, dict) and data.get("code") == 1 and data.get("data") and data["data"].get("token"):
+        if (
+            isinstance(data, dict)
+            and data.get("code") == 1
+            and data.get("data")
+            and data["data"].get("token")
+        ):
             tok = data["data"]["token"]
             logger.info(f"login ok, token_len={len(tok)} user={user}")
             return tok
@@ -772,6 +874,7 @@ def _login_platform() -> str:
         logger.error(f"登录异常: {e}")
         raise HTTPException(status_code=502, detail="平台登录异常")
 
+
 def _get_runtime_token() -> str:
     """获取运行时token：优先使用缓存；过期则登录刷新。"""
     now = time.time()
@@ -783,7 +886,13 @@ def _get_runtime_token() -> str:
         _token_cache["exp"] = now + _TOKEN_TTL_SEC
         return tok
 
-def _requests_get(url: str, params: Dict[str, Any], headers: Optional[Dict[str, Any]] = None, timeout: float = 5.0) -> Dict[str, Any]:
+
+def _requests_get(
+    url: str,
+    params: Dict[str, Any],
+    headers: Optional[Dict[str, Any]] = None,
+    timeout: float = 5.0,
+) -> Dict[str, Any]:
     try:
         # 记录下游请求形态（脱敏 token）
         safe_headers = dict(headers or {})
@@ -795,7 +904,9 @@ def _requests_get(url: str, params: Dict[str, Any], headers: Optional[Dict[str, 
             safe_headers["Token"] = "***"
         logger.info(f"REQ GET url={url} params={params} headers={safe_headers}")
         resp = requests.get(url, params=params, headers=headers, timeout=timeout)
-        logger.info(f"RESP GET status={resp.status_code} text_head={resp.text[:120] if resp.text else ''}")
+        logger.info(
+            f"RESP GET status={resp.status_code} text_head={resp.text[:120] if resp.text else ''}"
+        )
         if resp.status_code != 200:
             logger.error(f"下游查询失败 code={resp.status_code}, body={resp.text[:500]}")
             raise HTTPException(status_code=502, detail="下游平台查询失败")
@@ -806,12 +917,27 @@ def _requests_get(url: str, params: Dict[str, Any], headers: Optional[Dict[str, 
         logger.exception(f"下游查询异常: {e}")
         raise HTTPException(status_code=502, detail="下游平台查询异常")
 
-def _requests_post_json(url: str, json_body: Any, headers: Optional[Dict[str, Any]] = None, params: Optional[Dict[str, Any]] = None, cookies: Optional[Dict[str, str]] = None, timeout: float = 8.0) -> Dict[str, Any]:
+
+def _requests_post_json(
+    url: str,
+    json_body: Any,
+    headers: Optional[Dict[str, Any]] = None,
+    params: Optional[Dict[str, Any]] = None,
+    cookies: Optional[Dict[str, str]] = None,
+    timeout: float = 8.0,
+) -> Dict[str, Any]:
     try:
         use_headers = dict(headers or {})
         if "Content-Type" not in {k.title(): v for k, v in use_headers.items()}:
             use_headers["Content-Type"] = "application/json"
-        resp = requests.post(url, params=params, json=json_body, headers=use_headers, cookies=cookies, timeout=timeout)
+        resp = requests.post(
+            url,
+            params=params,
+            json=json_body,
+            headers=use_headers,
+            cookies=cookies,
+            timeout=timeout,
+        )
         if resp.status_code != 200:
             logger.error(f"下游写值失败 code={resp.status_code}, body={resp.text[:500]}")
             raise HTTPException(status_code=502, detail="下游平台写值失败")
@@ -822,7 +948,10 @@ def _requests_post_json(url: str, json_body: Any, headers: Optional[Dict[str, An
         logger.exception(f"下游写值异常: {e}")
         raise HTTPException(status_code=502, detail="下游平台写值异常")
 
-def _call_select_with_variants(url: str, object_code: str, data_code: str, token: str) -> Dict[str, Any]:
+
+def _call_select_with_variants(
+    url: str, object_code: str, data_code: str, token: str
+) -> Dict[str, Any]:
     # 0) 统一候选集
     header_candidates = [
         {"token": token},
@@ -835,19 +964,31 @@ def _call_select_with_variants(url: str, object_code: str, data_code: str, token
     query_token_keys = ["token", "access_token", "auth_token", "Authorization"]
     json_token_keys = ["token", "access_token", "auth_token"]
     data_keys = ["object_code", "data_code"]
-    alt_data_keys = [("object_code","data_code"), ("objectCode","dataCode"), ("point_object","point_code"), ("object","code")]
+    alt_data_keys = [
+        ("object_code", "data_code"),
+        ("objectCode", "dataCode"),
+        ("point_object", "point_code"),
+        ("object", "code"),
+    ]
     # 1) 首次三轨（params+json+headers+cookie）
     base_json = {"object_code": object_code, "data_code": data_code, "token": token}
     base_params = {"object_code": object_code, "data_code": data_code, "token": token}
     base_headers = {"token": token, "Token": token, "Authorization": f"Bearer {token}"}
     try:
-        return _requests_post_json(url, base_json, base_headers, base_params, {"token": token}, timeout=6.0)
+        return _requests_post_json(
+            url, base_json, base_headers, base_params, {"token": token}, timeout=6.0
+        )
     except Exception:
         pass
     # 2) headers only × 多头部
     for h in header_candidates:
         try:
-            r = requests.post(url, json={"object_code": object_code, "data_code": data_code}, headers=h, timeout=4.0)
+            r = requests.post(
+                url,
+                json={"object_code": object_code, "data_code": data_code},
+                headers=h,
+                timeout=4.0,
+            )
             if r.status_code == 200:
                 return r.json() if r.text else {}
         except Exception:
@@ -855,7 +996,11 @@ def _call_select_with_variants(url: str, object_code: str, data_code: str, token
     # 3) query×多token键
     for tk in query_token_keys:
         try:
-            r = requests.post(url, params={tk: token, "object_code": object_code, "data_code": data_code}, timeout=4.0)
+            r = requests.post(
+                url,
+                params={tk: token, "object_code": object_code, "data_code": data_code},
+                timeout=4.0,
+            )
             if r.status_code == 200:
                 return r.json() if r.text else {}
         except Exception:
@@ -871,7 +1016,12 @@ def _call_select_with_variants(url: str, object_code: str, data_code: str, token
             pass
     # 5) cookie
     try:
-        r = requests.post(url, json={"object_code": object_code, "data_code": data_code}, cookies={"token": token}, timeout=4.0)
+        r = requests.post(
+            url,
+            json={"object_code": object_code, "data_code": data_code},
+            cookies={"token": token},
+            timeout=4.0,
+        )
         if r.status_code == 200:
             return r.json() if r.text else {}
     except Exception:
@@ -880,14 +1030,23 @@ def _call_select_with_variants(url: str, object_code: str, data_code: str, token
     for tk in ["token", "access_token", "auth_token"]:
         try:
             form = {"object_code": object_code, "data_code": data_code, tk: token}
-            r = requests.post(url, data=form, headers={"Content-Type": "application/x-www-form-urlencoded"}, timeout=4.0)
+            r = requests.post(
+                url,
+                data=form,
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                timeout=4.0,
+            )
             if r.status_code == 200:
                 return r.json() if r.text else {}
         except Exception:
             pass
     # 7) multipart/form-data（含token）
     try:
-        mp = {"object_code": (None, object_code), "data_code": (None, data_code), "token": (None, token)}
+        mp = {
+            "object_code": (None, object_code),
+            "data_code": (None, data_code),
+            "token": (None, token),
+        }
         r = requests.post(url, files=mp, timeout=4.0)
         if r.status_code == 200:
             return r.json() if r.text else {}
@@ -904,25 +1063,36 @@ def _call_select_with_variants(url: str, object_code: str, data_code: str, token
                 pass
     raise HTTPException(status_code=502, detail="下游平台查询失败（鉴权矩阵均未命中）")
 
+
 @app.get("/control/points/real-time")
 async def get_point_realtime(object_code: str, data_code: str, request: Request):
     """点位实时值查询：封装平台POST接口（已改为POST），带固定Token兜底 + 鉴权矩阵回退"""
     token = _get_runtime_token()
-    logger.info(f"RT CALL object_code={object_code} data_code={data_code} token_len={len(token)}")
+    logger.info(
+        f"RT CALL object_code={object_code} data_code={data_code} token_len={len(token)}"
+    )
     loop = asyncio.get_event_loop()
     try:
         raw = await loop.run_in_executor(
             None,
             lambda: (
-                (lambda resp: (resp.json() if resp.status_code == 200 and resp.text else {}))(
+                (
+                    lambda resp: (
+                        resp.json() if resp.status_code == 200 and resp.text else {}
+                    )
+                )(
                     requests.post(
                         SELECT_URL,
-                        data={"object_code": object_code, "data_code": data_code, "token": token},
+                        data={
+                            "object_code": object_code,
+                            "data_code": data_code,
+                            "token": token,
+                        },
                         headers={
                             "Content-Type": "application/x-www-form-urlencoded",
                             "authorization": token,
                             "token": token,
-                            "x-locale": "zh_cn"
+                            "x-locale": "zh_cn",
                         },
                         timeout=6.0,
                     )
@@ -934,7 +1104,7 @@ async def get_point_realtime(object_code: str, data_code: str, request: Request)
         raw = {"code": 502, "message": "select_failed", "error": str(_e)}
     # 规范化返回
     now_iso = datetime.utcnow().isoformat() + "Z"
-    
+
     # 从平台API响应中提取值
     value = None
     unit = None
@@ -942,9 +1112,14 @@ async def get_point_realtime(object_code: str, data_code: str, request: Request)
         # 先尝试直接获取value字段
         value = raw.get("value")
         unit = raw.get("unit")
-        
+
         # 如果没有直接的value字段，尝试从data数组中提取
-        if value is None and "data" in raw and isinstance(raw["data"], list) and len(raw["data"]) > 0:
+        if (
+            value is None
+            and "data" in raw
+            and isinstance(raw["data"], list)
+            and len(raw["data"]) > 0
+        ):
             data_item = raw["data"][0]
             if isinstance(data_item, dict):
                 # 优先使用property_num_value，如果不存在则使用property_value
@@ -954,7 +1129,11 @@ async def get_point_realtime(object_code: str, data_code: str, request: Request)
                     property_value = data_item["property_value"]
                     # 尝试转换为数字
                     try:
-                        value = float(property_value) if property_value is not None else None
+                        value = (
+                            float(property_value)
+                            if property_value is not None
+                            else None
+                        )
                     except (ValueError, TypeError):
                         value = property_value
     result_obj = {
@@ -984,6 +1163,7 @@ async def get_point_realtime(object_code: str, data_code: str, request: Request)
         logger.debug(f"查询审计写入失败: {_e}")
     return result_obj
 
+
 def _validate_and_normalize(cmd: Dict[str, Any]) -> Optional[str]:
     # 返回错误信息字符串；通过则返回 None
     if "point_key" not in cmd or "data_source" not in cmd or "control_value" not in cmd:
@@ -1006,36 +1186,55 @@ def _validate_and_normalize(cmd: Dict[str, Any]) -> Optional[str]:
     # 可在此添加范围规则：示例温度[-50, 100]
     return None
 
-async def _write_one(cmd: Dict[str, Any], token: str, operator_id: str) -> Dict[str, Any]:
+
+async def _write_one(
+    cmd: Dict[str, Any], token: str, operator_id: str
+) -> Dict[str, Any]:
     # 单条下发并带重试；返回逐项结果
     err = _validate_and_normalize(cmd)
     if err:
-        return {"point_key": cmd.get("point_key"), "status": "failed", "message": err, "retries": 0}
+        return {
+            "point_key": cmd.get("point_key"),
+            "status": "failed",
+            "message": err,
+            "retries": 0,
+        }
     # before_value：若提供 object_code + data_code，调用实时查询接口
     before_val = None
     try:
         if isinstance(cmd, dict) and cmd.get("object_code") and cmd.get("data_code"):
             loop = asyncio.get_event_loop()
+
             def _pre_read():
                 r = requests.post(
                     SELECT_URL,
-                    data={"object_code": cmd["object_code"], "data_code": cmd["data_code"], "token": token},
+                    data={
+                        "object_code": cmd["object_code"],
+                        "data_code": cmd["data_code"],
+                        "token": token,
+                    },
                     headers={
                         "Content-Type": "application/x-www-form-urlencoded",
                         "authorization": token,
                         "token": token,
-                        "x-locale": "zh_cn"
+                        "x-locale": "zh_cn",
                     },
                     timeout=6.0,
                 )
                 return r.json() if r.status_code == 200 and r.text else {}
+
             before_raw = await loop.run_in_executor(None, _pre_read)
             if isinstance(before_raw, dict):
                 # 从平台API响应中提取值
                 before_val = before_raw.get("value")
-                
+
                 # 如果没有直接的value字段，尝试从data数组中提取
-                if before_val is None and "data" in before_raw and isinstance(before_raw["data"], list) and len(before_raw["data"]) > 0:
+                if (
+                    before_val is None
+                    and "data" in before_raw
+                    and isinstance(before_raw["data"], list)
+                    and len(before_raw["data"]) > 0
+                ):
                     data_item = before_raw["data"][0]
                     if isinstance(data_item, dict):
                         # 优先使用property_num_value，如果不存在则使用property_value
@@ -1045,7 +1244,11 @@ async def _write_one(cmd: Dict[str, Any], token: str, operator_id: str) -> Dict[
                             property_value = data_item["property_value"]
                             # 尝试转换为数字
                             try:
-                                before_val = float(property_value) if property_value is not None else None
+                                before_val = (
+                                    float(property_value)
+                                    if property_value is not None
+                                    else None
+                                )
                             except (ValueError, TypeError):
                                 before_val = property_value
     except Exception as _e:
@@ -1073,9 +1276,9 @@ async def _write_one(cmd: Dict[str, Any], token: str, operator_id: str) -> Dict[
                     headers={
                         "Content-Type": "application/json",
                         "authorization": token,
-                        "token": token
+                        "token": token,
                     },
-                    timeout=8.0
+                    timeout=8.0,
                 ),
             )
             if result.status_code == 200:
@@ -1096,7 +1299,9 @@ async def _write_one(cmd: Dict[str, Any], token: str, operator_id: str) -> Dict[
                         point_key=cmd["point_key"],
                         object_code=cmd.get("object_code"),
                         data_code=cmd.get("data_code"),
-                        before_value=str(before_val) if before_val is not None else None,
+                        before_value=str(before_val)
+                        if before_val is not None
+                        else None,
                         after_value=str(cmd.get("control_value")),
                         result="ok",
                         message=f"data_source={cmd.get('data_source')}",
@@ -1127,7 +1332,9 @@ async def _write_one(cmd: Dict[str, Any], token: str, operator_id: str) -> Dict[
                         point_key=cmd.get("point_key") or "",
                         object_code=cmd.get("object_code"),
                         data_code=cmd.get("data_code"),
-                        before_value=str(before_val) if before_val is not None else None,
+                        before_value=str(before_val)
+                        if before_val is not None
+                        else None,
                         after_value=None,
                         result="failed",
                         message=str(e),
@@ -1139,7 +1346,9 @@ async def _write_one(cmd: Dict[str, Any], token: str, operator_id: str) -> Dict[
             backoff = 0.2 * (2 ** (tries - 1))
             await asyncio.sleep(backoff)
 
+
 # 旧实现的 /control/points/write 已移除，统一由 write_points_endpoint 提供实现
+
 
 @app.get("/control/points/default")
 async def get_default_points(object_codes: str, request: Request):
@@ -1154,7 +1363,8 @@ async def get_default_points(object_codes: str, request: Request):
         raise HTTPException(status_code=400, detail="参数 object_codes 不能为空")
     # 动态占位符
     placeholders = ",".join(["%s"] * len(codes))
-    sql = """
+    sql = (
+        """
         SELECT 
             o.object_code,
             p.data_code,
@@ -1171,9 +1381,12 @@ async def get_default_points(object_codes: str, request: Request):
             p.error_max
         FROM bus_object_point_data p
         JOIN bus_object_info o ON p.object_id = o.object_id
-        WHERE o.object_code IN (""" + placeholders + """)
+        WHERE o.object_code IN ("""
+        + placeholders
+        + """)
         LIMIT 1000
     """
+    )
     try:
         rows = execute_query(sql, tuple(codes)) or []
     except Exception as e:
@@ -1182,24 +1395,39 @@ async def get_default_points(object_codes: str, request: Request):
     result = []
     for row in rows:
         # execute_query 默认返回 tuple，按选取顺序映射
-        (object_code, data_code, point_key, data_type, unit,
-         is_set, lower_control, border_min, border_max, warn_min, warn_max, error_min, error_max) = row
+        (
+            object_code,
+            data_code,
+            point_key,
+            data_type,
+            unit,
+            is_set,
+            lower_control,
+            border_min,
+            border_max,
+            warn_min,
+            warn_max,
+            error_min,
+            error_max,
+        ) = row
         # 可写性：is_set==1 或 lower_control==1
         is_writable = (is_set == 1) or (lower_control == 1)
-        result.append({
-            "object_code": object_code,
-            "data_code": data_code,
-            "point_key": point_key,
-            "data_type": data_type,
-            "unit": unit,
-            "is_writable": bool(is_writable),
-            "border_min": border_min,
-            "border_max": border_max,
-            "warn_min": warn_min,
-            "warn_max": warn_max,
-            "error_min": error_min,
-            "error_max": error_max,
-        })
+        result.append(
+            {
+                "object_code": object_code,
+                "data_code": data_code,
+                "point_key": point_key,
+                "data_type": data_type,
+                "unit": unit,
+                "is_writable": bool(is_writable),
+                "border_min": border_min,
+                "border_max": border_max,
+                "warn_min": warn_min,
+                "warn_max": warn_max,
+                "error_min": error_min,
+                "error_max": error_max,
+            }
+        )
     # 记录一次只读审计
     operator_id = request.headers.get("x-operator-id", "system")
     try:
@@ -1218,6 +1446,7 @@ async def get_default_points(object_codes: str, request: Request):
         logger.debug(f"默认数据源审计写入失败: {_e}")
     return {"items": result, "count": len(result)}
 
+
 @app.get("/control/debug-token")
 async def debug_token():
     # 尝试通过 _get_token 触发回退加载，以便确认来源
@@ -1231,7 +1460,9 @@ async def debug_token():
             t = None
     return {"has": bool(t), "len": (len(t) if t else 0), "source": src}
 
+
 from fastapi.responses import PlainTextResponse
+
 
 @app.get("/control/debug-token-raw", response_class=PlainTextResponse)
 async def debug_token_raw():
@@ -1248,14 +1479,20 @@ async def debug_token_raw():
     ln = str(len(t)) if t else "0"
     return f"has={has_str}; len={ln}; source={src}"
 
+
 @app.get("/control/debug-env")
 async def debug_env():
     # 返回以 HK_ 开头的环境变量快照（不含明文 token）
     try:
-        items = {k: (len(v) if isinstance(v, str) else None) for k, v in os.environ.items() if k.startswith("HK_")}
+        items = {
+            k: (len(v) if isinstance(v, str) else None)
+            for k, v in os.environ.items()
+            if k.startswith("HK_")
+        }
         return {"keys": list(items.keys()), "lens": items}
     except Exception as _e:
         return {"error": str(_e)}
+
 
 @app.get("/control/debug-runtime-token")
 async def debug_runtime_token():
@@ -1267,6 +1504,7 @@ async def debug_runtime_token():
         return {"len": ln, "head": head, "tail": tail}
     except Exception as _e:
         return {"error": str(_e)}
+
 
 @app.get("/control/device-tree-test")
 async def get_device_tree_test(request: Request):
@@ -1293,8 +1531,8 @@ async def get_device_tree_test(request: Request):
                                     "unit": "℃",
                                     "is_writable": True,
                                     "point_key": "test:point1",
-                                    "data_type": "0"
-                                }
+                                    "data_type": "0",
+                                },
                             },
                             {
                                 "id": "test_device:point2",
@@ -1306,28 +1544,29 @@ async def get_device_tree_test(request: Request):
                                     "unit": "%",
                                     "is_writable": False,
                                     "point_key": "test:point2",
-                                    "data_type": "0"
-                                }
-                            }
+                                    "data_type": "0",
+                                },
+                            },
                         ],
                         "meta": {
                             "object_code": "test_device",
                             "object_name": "测试设备",
                             "object_type": "device",
-                            "point_count": 2
-                        }
+                            "point_count": 2,
+                        },
                     }
                 ],
                 "meta": {
                     "object_code": "test_project",
                     "object_name": "测试项目",
                     "object_type": "project",
-                    "total_points": 2
-                }
+                    "total_points": 2,
+                },
             }
         ],
-        "count": 1
+        "count": 1,
     }
+
 
 @app.get("/control/device-tree-legacy")
 async def get_device_tree(request: Request):
@@ -1337,7 +1576,7 @@ async def get_device_tree(request: Request):
     支持小系统传感器数据模式（fSmallFan%, fRoomTemp%, fSmallHigh%, iSmallHigh%, fSmallLow%, iSmallLow%, fSmallChil%等）
     """
     operator_id = request.headers.get("x-operator-id", "system")
-    
+
     try:
         # 查询项目根节点（parent_id = 0）
         root_sql = """
@@ -1347,13 +1586,13 @@ async def get_device_tree(request: Request):
             ORDER BY object_code
         """
         root_nodes = execute_query(root_sql) or []
-        
+
         # 构建设备树
         tree_nodes = []
-        
+
         for root in root_nodes:
             object_id, object_code, object_name, object_type = root
-            
+
             # 查询子设备
             children_sql = """
                 SELECT 
@@ -1369,14 +1608,14 @@ async def get_device_tree(request: Request):
                 ORDER BY o.object_code
             """
             children = execute_query(children_sql, (object_id,)) or []
-            
+
             child_nodes = []
             total_points = 0
-            
+
             for child in children:
                 child_id, child_code, child_name, child_type, point_count = child
                 total_points += point_count or 0
-                
+
                 # 查询该子设备的点位信息（特别支持小系统传感器）
                 points_sql = """
                     SELECT 
@@ -1411,8 +1650,8 @@ async def get_device_tree(request: Request):
                                 "unit": "℃",
                                 "is_writable": True,
                                 "point_key": f"C251:{child_code}:H-A01_1",
-                                "data_type": "0"
-                            }
+                                "data_type": "0",
+                            },
                         },
                         {
                             "id": f"{child_code}:H-A01_2",
@@ -1424,8 +1663,8 @@ async def get_device_tree(request: Request):
                                 "unit": "%",
                                 "is_writable": False,
                                 "point_key": f"C251:{child_code}:H-A01_2",
-                                "data_type": "0"
-                            }
+                                "data_type": "0",
+                            },
                         },
                         {
                             "id": f"{child_code}:H-A02_1",
@@ -1437,38 +1676,42 @@ async def get_device_tree(request: Request):
                                 "unit": "℃",
                                 "is_writable": True,
                                 "point_key": f"C251:{child_code}:H-A02_1",
-                                "data_type": "0"
-                            }
-                        }
+                                "data_type": "0",
+                            },
+                        },
                     ]
                 else:
                     # 其他设备不显示点位，避免大量数据
                     point_nodes = []
-                
-                child_nodes.append({
-                    "id": child_code,
-                    "label": f"{child_name} ({child_code}) [{point_count or 0}点]",
-                    "children": point_nodes,
-                    "meta": {
-                        "object_code": child_code,
-                        "object_name": child_name,
-                        "object_type": child_type,
-                        "point_count": point_count or 0
+
+                child_nodes.append(
+                    {
+                        "id": child_code,
+                        "label": f"{child_name} ({child_code}) [{point_count or 0}点]",
+                        "children": point_nodes,
+                        "meta": {
+                            "object_code": child_code,
+                            "object_name": child_name,
+                            "object_type": child_type,
+                            "point_count": point_count or 0,
+                        },
                     }
-                })
-            
-            tree_nodes.append({
-                "id": object_code,
-                "label": f"{object_name} ({object_code}) [{total_points}点]",
-                "children": child_nodes,
-                "meta": {
-                    "object_code": object_code,
-                    "object_name": object_name,
-                    "object_type": object_type,
-                    "total_points": total_points
+                )
+
+            tree_nodes.append(
+                {
+                    "id": object_code,
+                    "label": f"{object_name} ({object_code}) [{total_points}点]",
+                    "children": child_nodes,
+                    "meta": {
+                        "object_code": object_code,
+                        "object_name": object_name,
+                        "object_type": object_type,
+                        "total_points": total_points,
+                    },
                 }
-            })
-        
+            )
+
         # 记录审计
         try:
             insert_operation_log(
@@ -1484,13 +1727,15 @@ async def get_device_tree(request: Request):
             )
         except Exception as _e:
             logger.debug(f"设备树查询审计写入失败: {_e}")
-        
+
         return {"tree": tree_nodes, "count": len(tree_nodes)}
-        
+
     except Exception as e:
         logger.error(f"获取设备树失败: {e}")
         raise HTTPException(status_code=500, detail="获取设备树失败")
 
+
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8000)
