@@ -109,6 +109,24 @@ start_all.bat
 start_simple.bat
 ```
 
+### 重启服务（推荐）
+使用重启脚本可以快速重启前后端服务并运行测试：
+
+```bash
+# 跨平台方式（推荐）
+python scripts/restart_and_test.py
+
+# Linux/macOS
+./scripts/restart_and_test.sh
+
+# Windows
+scripts\restart_and_test.bat
+```
+
+更多选项和详细说明请查看：
+- 📖 [快速指南](RESTART_SCRIPTS_QUICK_GUIDE.md)
+- 📊 [详细测试报告](RESTART_SCRIPTS_TEST_REPORT.md)
+
 ### 手动部署
 
 #### 1. 后端部署
