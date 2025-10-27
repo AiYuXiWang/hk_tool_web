@@ -103,61 +103,65 @@
       />
     </div>
 
-    <!-- 图表区域 -->
-    <div class="chart-section">
-      <EnergyChart
-        title="实时能耗监测"
-        :data="realtimeData"
-        chart-type="line"
-        :loading="false"
-        :time-period="trendPeriod"
-        @refresh="refreshRealtime"
-        class="chart-container"
-      />
-      
-      <EnergyChart
-        title="历史数据趋势"
-        :data="historyData"
-        chart-type="bar"
-        :loading="false"
-        :time-period="trendPeriod"
-        :show-export="true"
-        @export="exportHistoryData"
-        @refresh="refreshTrend"
-        class="chart-container"
-      />
+    <div class="content-grid">
+      <div class="charts-column">
+        <div class="chart-grid">
+          <EnergyChart
+            title="实时能耗监测"
+            :data="realtimeData"
+            chart-type="line"
+            :loading="false"
+            :time-period="trendPeriod"
+            :height="chartHeight"
+            @refresh="refreshRealtime"
+            class="chart-container"
+          />
+          
+          <EnergyChart
+            title="历史数据趋势"
+            :data="historyData"
+            chart-type="bar"
+            :loading="false"
+            :time-period="trendPeriod"
+            :show-export="true"
+            :height="chartHeight"
+            @export="exportHistoryData"
+            @refresh="refreshTrend"
+            class="chart-container"
+          />
 
-      <!-- 分类分项能耗分析 -->
-      <EnergyChart
-        title="分类分项能耗"
-        :data="classificationData"
-        chart-type="pie"
-        :loading="false"
-        :time-period="trendPeriod"
-        @refresh="refreshClassification"
-        class="chart-container"
-      />
-    </div>
+          <EnergyChart
+            title="分类分项能耗"
+            :data="classificationData"
+            chart-type="pie"
+            :loading="false"
+            :time-period="trendPeriod"
+            :height="chartHeight"
+            @refresh="refreshClassification"
+            class="chart-container"
+          />
+        </div>
+      </div>
 
-    <!-- 设备监控和优化建议 -->
-    <div class="bottom-section">
-      <EnergyDeviceMonitor
-        title="设备监控"
-        :auto-refresh="true"
-        :refresh-interval="10000"
-        @device-selected="onDeviceSelected"
-        @device-controlled="onDeviceControlled"
-        class="device-monitor"
-      />
-      
-      <EnergyOptimizationPanel
-        title="智能节能建议"
-        :auto-refresh="true"
-        :refresh-interval="300000"
-        @suggestion-implemented="onSuggestionImplemented"
-        @suggestion-viewed="onSuggestionViewed"
-        class="optimization-panel"
-      />
+      <div class="panels-column">
+        <EnergyDeviceMonitor
+          title="设备监控"
+          :auto-refresh="true"
+          :refresh-interval="10000"
+          @device-selected="onDeviceSelected"
+          @device-controlled="onDeviceControlled"
+          class="device-monitor"
+        />
+        
+        <EnergyOptimizationPanel
+          title="智能节能建议"
+          :auto-refresh="true"
+          :refresh-interval="300000"
+          @suggestion-implemented="onSuggestionImplemented"
+          @suggestion-viewed="onSuggestionViewed"
+          class="optimization-panel"
+        />
+      </div>
     </div>
   </div>
 </template>
@@ -200,6 +204,7 @@ const realtimeData = ref<ChartData[]>([])
 const historyData = ref<ChartData[]>([])
 const classificationData = ref<ChartData[]>([])
 const compareData = ref<{ yoy_percent: number; mom_percent: number; current_kwh: number } | null>(null)
+const chartHeight = ref('320px')
 let refreshTimer: NodeJS.Timeout | null = null
 
 const stationsOfSelectedLine = computed(() => {
@@ -385,15 +390,36 @@ function startAutoRefresh() {
   }, 30000) // 30秒刷新一次实时数据
 }
 
+function updateChartHeight() {
+  if (typeof window === 'undefined') return
+  const height = window.innerHeight || 1080
+  if (height <= 900) {
+    chartHeight.value = '280px'
+  } else if (height <= 1080) {
+    chartHeight.value = '320px'
+  } else if (height <= 1440) {
+    chartHeight.value = '360px'
+  } else {
+    chartHeight.value = '400px'
+  }
+}
+
 onMounted(async () => {
   await loadLineConfigs()
   refreshAll()
   startAutoRefresh()
+  if (typeof window !== 'undefined') {
+    updateChartHeight()
+    window.addEventListener('resize', updateChartHeight)
+  }
 })
 
 onUnmounted(() => {
   if (refreshTimer) {
     clearInterval(refreshTimer)
+  }
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('resize', updateChartHeight)
   }
 })
 
@@ -534,11 +560,22 @@ watch([selectedLine, selectedStation], () => {
   }
 }
 
-.chart-section {
+.content-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 2fr) minmax(320px, 1fr);
   gap: var(--spacing-lg);
   margin-bottom: var(--spacing-md);
+  align-items: stretch;
+}
+
+.charts-column {
+  min-width: 0;
+}
+
+.chart-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--spacing-lg);
 }
 
 .chart-container {
@@ -558,10 +595,14 @@ watch([selectedLine, selectedStation], () => {
   border-color: rgba(0, 212, 255, 0.5);
 }
 
-.bottom-section {
+.panels-column {
   display: grid;
-  grid-template-columns: 1fr 1fr;
   gap: var(--spacing-lg);
+  grid-auto-rows: minmax(0, 1fr);
+}
+
+.panels-column > * {
+  min-height: clamp(260px, 32vh, 360px);
 }
 
 .device-monitor,
@@ -584,13 +625,13 @@ watch([selectedLine, selectedStation], () => {
 }
 
 /* 响应式设计 */
-@media (max-width: 1200px) {
-  .chart-section {
+@media (max-width: 1400px) {
+  .content-grid {
     grid-template-columns: 1fr;
   }
-  
-  .bottom-section {
-    grid-template-columns: 1fr;
+
+  .panels-column {
+    grid-auto-rows: auto;
   }
 }
 
@@ -615,8 +656,8 @@ watch([selectedLine, selectedStation], () => {
     gap: var(--spacing-sm);
   }
   
-  .chart-section,
-  .bottom-section {
+  .chart-grid,
+  .panels-column {
     gap: var(--spacing-md);
   }
 }
