@@ -8,7 +8,7 @@ import os
 import random
 import sys
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 
@@ -17,6 +17,14 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 from backend.app.config.electricity_config import ElectricityConfig  # noqa: E402
 from backend.app.core.dependencies import get_energy_service  # noqa: E402
+from backend.app.services.energy_data_provider import (  # noqa: E402
+    RealDataUnavailable,
+    compute_classification_for_station,
+    compute_compare_for_station,
+    compute_kpi_for_station,
+    compute_realtime_series_for_station,
+    compute_trend_for_station,
+)
 from backend.app.services.energy_service import EnergyService  # noqa: E402
 
 logger = logging.getLogger(__name__)
@@ -24,6 +32,256 @@ router = APIRouter()
 
 # 初始化配置
 electricity_config = ElectricityConfig()
+
+
+def _normalize_line(line: Optional[str]) -> Optional[str]:
+    if not line:
+        return None
+    return line.strip().upper()
+
+
+def _get_station_count_for_line(line: Optional[str]) -> int:
+    config_map = getattr(electricity_config, "config_data", {}) or {}
+    if not line:
+        return sum(len(line_cfg) for line_cfg in config_map.values())
+
+    normalized = _normalize_line(line)
+    for line_code, line_cfg in config_map.items():
+        if line_code.upper() == normalized:
+            return len(line_cfg)
+    return 0
+
+
+def _resolve_station_contexts(
+    line: Optional[str],
+    station_ip: Optional[str],
+) -> List[Dict[str, Any]]:
+    config_map = getattr(electricity_config, "config_data", {}) or {}
+    contexts: List[Dict[str, Any]] = []
+    normalized_line = _normalize_line(line)
+
+    if station_ip:
+        for line_code, line_cfg in config_map.items():
+            if normalized_line and line_code.upper() != normalized_line:
+                continue
+            for station_name, cfg in line_cfg.items():
+                if cfg.get("ip") == station_ip:
+                    contexts.append(
+                        {
+                            "line": line_code,
+                            "station_key": station_name,
+                            "display_name": cfg.get("station", station_name),
+                            "ip": cfg.get("ip"),
+                            "config": cfg,
+                        }
+                    )
+        return contexts
+
+    if normalized_line:
+        for line_code, line_cfg in config_map.items():
+            if line_code.upper() != normalized_line:
+                continue
+            for station_name, cfg in line_cfg.items():
+                contexts.append(
+                    {
+                        "line": line_code,
+                        "station_key": station_name,
+                        "display_name": cfg.get("station", station_name),
+                        "ip": cfg.get("ip"),
+                        "config": cfg,
+                    }
+                )
+            return contexts
+
+    for line_code, line_cfg in config_map.items():
+        for station_name, cfg in line_cfg.items():
+            contexts.append(
+                {
+                    "line": line_code,
+                    "station_key": station_name,
+                    "display_name": cfg.get("station", station_name),
+                    "ip": cfg.get("ip"),
+                    "config": cfg,
+                }
+            )
+    return contexts
+
+
+def _mock_realtime_payload(station_names: List[str]) -> Dict[str, Any]:
+    now = datetime.now()
+    timestamps = [
+        (now - timedelta(minutes=10 * (11 - idx))).strftime("%H:%M")
+        for idx in range(12)
+    ]
+
+    series = []
+    for name in station_names or ["示例站点"]:
+        base_power = random.uniform(90, 180)
+        points = []
+        for index in range(12):
+            minutes_ago = 10 * (11 - index)
+            hour = (now - timedelta(minutes=minutes_ago)).hour
+            if 6 <= hour <= 22:
+                power = base_power * random.uniform(0.85, 1.2)
+            else:
+                power = base_power * random.uniform(0.5, 0.8)
+            points.append(round(power, 1))
+        series.append({"name": name, "points": points})
+
+    return {
+        "series": series,
+        "timestamps": timestamps,
+        "update_time": datetime.now().isoformat(),
+    }
+
+
+def _mock_trend_payload(period: str, station_count: int = 3) -> Dict[str, Any]:
+    now = datetime.now()
+
+    if period == "24h":
+        timestamps = [
+            (now - timedelta(hours=23 - idx)).strftime("%H:%M") for idx in range(24)
+        ]
+        values = [
+            round(sum(random.uniform(120, 220) for _ in range(station_count)), 2)
+            for _ in range(24)
+        ]
+    elif period == "7d":
+        timestamps = [
+            (now - timedelta(days=6 - idx)).strftime("%m-%d") for idx in range(7)
+        ]
+        values = [
+            round(sum(random.uniform(2500, 4200) for _ in range(station_count)), 2)
+            for _ in range(7)
+        ]
+    elif period == "30d":
+        timestamps = [
+            (now - timedelta(days=29 - idx)).strftime("%m-%d") for idx in range(30)
+        ]
+        values = [
+            round(sum(random.uniform(2200, 3600) for _ in range(station_count)), 2)
+            for _ in range(30)
+        ]
+    else:
+        timestamps = [
+            (now - timedelta(hours=23 - idx)).strftime("%H:%M") for idx in range(24)
+        ]
+        values = [
+            round(sum(random.uniform(120, 220) for _ in range(station_count)), 2)
+            for _ in range(24)
+        ]
+
+    return {
+        "values": values,
+        "timestamps": timestamps,
+        "period": period,
+        "station_count": station_count,
+        "update_time": datetime.now().isoformat(),
+    }
+
+
+def _mock_kpi_payload(station_count: int) -> Dict[str, Any]:
+    base_power_per_station = 150
+    simulated_count = max(station_count, 1)
+    current_kw = sum(
+        base_power_per_station * (0.8 + 0.4 * random.random())
+        for _ in range(simulated_count)
+    )
+    current_kw = round(current_kw, 1)
+    peak_kw = round(current_kw * random.uniform(1.2, 1.5), 1)
+    hours_elapsed = datetime.now().hour + datetime.now().minute / 60
+    total_kwh_today = round(current_kw * hours_elapsed * random.uniform(0.8, 1.2), 1)
+    return {
+        "total_kwh_today": total_kwh_today,
+        "current_kw": current_kw,
+        "peak_kw": peak_kw,
+        "station_count": station_count,
+        "update_time": datetime.now().isoformat(),
+    }
+
+
+def _mock_compare_payload(period: str, station_count: int) -> Dict[str, Any]:
+    simulated_count = max(station_count, 1)
+    if period == "24h":
+        base_kwh = simulated_count * 3500
+    elif period == "7d":
+        base_kwh = simulated_count * 3500 * 7
+    elif period == "30d":
+        base_kwh = simulated_count * 3500 * 30
+    else:
+        base_kwh = simulated_count * 3500
+
+    current_kwh = round(base_kwh * random.uniform(0.9, 1.1), 1)
+    yoy_percent = round(random.uniform(-15, 5), 1)
+    mom_percent = round(random.uniform(-10, 10), 1)
+
+    return {
+        "current_kwh": current_kwh,
+        "yoy_percent": yoy_percent,
+        "mom_percent": mom_percent,
+        "period": period,
+        "station_count": station_count,
+        "update_time": datetime.now().isoformat(),
+    }
+
+
+def _mock_classification_payload(period: str, station_count: int) -> Dict[str, Any]:
+    simulated_count = max(station_count, 1)
+    if period == "24h":
+        total_kwh = simulated_count * 3500
+    elif period == "7d":
+        total_kwh = simulated_count * 3500 * 7
+    elif period == "30d":
+        total_kwh = simulated_count * 3500 * 30
+    else:
+        total_kwh = simulated_count * 3500
+
+    categories = [
+        {"name": "冷机系统", "ratio_range": (0.35, 0.45)},
+        {"name": "水泵系统", "ratio_range": (0.15, 0.25)},
+        {"name": "冷却塔", "ratio_range": (0.08, 0.15)},
+        {"name": "通风系统", "ratio_range": (0.10, 0.18)},
+        {"name": "照明系统", "ratio_range": (0.05, 0.12)},
+        {"name": "其他设备", "ratio_range": (0.03, 0.08)},
+    ]
+
+    items = []
+    remaining_kwh = total_kwh
+    for index, category in enumerate(categories):
+        if index == len(categories) - 1:
+            kwh = max(remaining_kwh, 0.0)
+        else:
+            low, high = category["ratio_range"]
+            ratio = random.uniform(low, high)
+            kwh = total_kwh * ratio
+            remaining_kwh = max(remaining_kwh - kwh, 0.0)
+        kwh = max(kwh, 0.0)
+        items.append(
+            {
+                "name": category["name"],
+                "kwh": round(kwh, 1),
+                "percentage": 0.0,
+            }
+        )
+
+    sum_kwh = sum(item["kwh"] for item in items)
+    if total_kwh and items and abs(sum_kwh - total_kwh) >= 0.1:
+        delta = round(total_kwh - sum_kwh, 1)
+        adjusted = max(items[-1]["kwh"] + delta, 0.0)
+        items[-1]["kwh"] = round(adjusted, 1)
+        sum_kwh = sum(item["kwh"] for item in items)
+
+    for item in items:
+        percentage = (item["kwh"] / sum_kwh) * 100 if sum_kwh else 0.0
+        item["percentage"] = round(max(0.0, min(percentage, 100.0)), 1)
+
+    return {
+        "items": items,
+        "total_kwh": round(sum_kwh, 1),
+        "period": period,
+        "station_count": station_count,
+        "update_time": datetime.now().isoformat(),
+    }
 
 
 @router.get("/overview")
@@ -67,58 +325,56 @@ async def get_realtime_data(
     返回格式: { series: [{ name, points }], timestamps: [] }
     """
     try:
-        # 确定站点IP
         target_station_ip = station_ip or x_station_ip
+        contexts = _resolve_station_contexts(line, target_station_ip)
 
-        # 获取站点列表
-        stations = []
-        if target_station_ip:
-            station_config = electricity_config.get_station_by_ip(target_station_ip)
-            if station_config:
-                stations = [station_config]
-        elif line:
-            stations = electricity_config.get_stations_by_line(line)
-        else:
-            stations = electricity_config.get_all_stations()
+        if not contexts:
+            logger.warning("未找到匹配的站点配置，使用模拟实时数据")
+            return _mock_realtime_payload([])
 
-        if not stations:
-            return {"series": [], "timestamps": []}
+        real_series = []
+        timestamps: Optional[List[str]] = None
 
-        # 生成最近12小时的时间戳
-        now = datetime.now()
-        timestamps = []
-        for i in range(12):
-            time_point = now - timedelta(hours=11 - i)
-            timestamps.append(time_point.strftime("%H:%M"))
+        for ctx in contexts[:5]:  # 最多展示5条曲线
+            try:
+                data = await compute_realtime_series_for_station(ctx["config"])
+            except RealDataUnavailable as exc:
+                logger.debug("站点%s实时数据不可用: %s", ctx["display_name"], exc)
+                continue
 
-        # 为每个站点生成一条曲线
-        series = []
-        for station in stations[:5]:  # 最多显示5个站点的曲线
-            # 生成功率数据点
-            base_power = random.uniform(100, 200)
-            points = []
-            for i in range(12):
-                # 模拟功率波动
-                hour = (now - timedelta(hours=11 - i)).hour
-                if 6 <= hour <= 22:  # 白天功率较高
-                    power = base_power * random.uniform(0.8, 1.2)
-                else:  # 夜间功率较低
-                    power = base_power * random.uniform(0.5, 0.8)
-                points.append(round(power, 1))
+            powers = [round(value, 1) for value in data.get("powers", [])]
+            current_timestamps = data.get("timestamps", [])
+            if not powers or not current_timestamps:
+                continue
 
-            series.append(
-                {
-                    "name": station.get("name", station.get("station", "未知站点")),
-                    "points": points,
-                }
-            )
+            if timestamps is None:
+                timestamps = current_timestamps
+            else:
+                if len(current_timestamps) != len(timestamps):
+                    min_len = min(len(current_timestamps), len(timestamps))
+                    timestamps = timestamps[:min_len]
+                    powers = powers[:min_len]
+                    for existing in real_series:
+                        existing["points"] = existing["points"][:min_len]
+            real_series.append({"name": ctx["display_name"], "points": powers})
 
-        return {
-            "series": series,
-            "timestamps": timestamps,
-            "update_time": datetime.now().isoformat(),
-        }
+        if real_series and timestamps:
+            return {
+                "series": real_series,
+                "timestamps": timestamps,
+                "update_time": datetime.now().isoformat(),
+            }
 
+        raise RealDataUnavailable("no realtime data available")
+
+    except RealDataUnavailable as exc:
+        logger.warning("实时数据回退到模拟数据: %s", exc)
+        names = (
+            [ctx.get("display_name") for ctx in contexts]
+            if "contexts" in locals()
+            else []
+        )
+        return _mock_realtime_payload(names)
     except Exception as e:
         logger.error(f"获取实时数据失败: {e}")
         raise HTTPException(status_code=500, detail=f"获取实时数据失败: {str(e)}")
@@ -276,66 +532,71 @@ async def get_trend_data(
     支持不同时间周期的数据查询
     返回格式: { values: [], timestamps: [] }
     """
+    if period not in {"24h", "7d", "30d"}:
+        raise HTTPException(status_code=400, detail="不支持的时间周期")
+
+    station_count = _get_station_count_for_line(line)
+
     try:
-        # 确定站点IP
         target_station_ip = station_ip or x_station_ip
+        if not target_station_ip or period != "24h":
+            raise RealDataUnavailable(
+                "live trend requires station scope and 24h period"
+            )
 
-        # 获取站点列表
-        stations = []
-        if target_station_ip:
-            station_config = electricity_config.get_station_by_ip(target_station_ip)
-            if station_config:
-                stations = [station_config]
-        elif line:
-            stations = electricity_config.get_stations_by_line(line)
-        else:
-            stations = electricity_config.get_all_stations()
+        contexts = _resolve_station_contexts(line, target_station_ip)
+        if not contexts:
+            raise RealDataUnavailable("no matching station configuration")
 
-        station_count = len(stations) if stations else 1
+        aggregated_values: Optional[List[float]] = None
+        timestamps: Optional[List[str]] = None
 
-        # 解析时间周期
-        if period == "24h":
-            data_points = 24
-            time_format = "%H:00"
-            base_value = station_count * 150  # 每站点每小时约150kWh
-        elif period == "7d":
-            data_points = 7
-            time_format = "%m-%d"
-            base_value = station_count * 3500  # 每站点每天约3500kWh
-        elif period == "30d":
-            data_points = 30
-            time_format = "%m-%d"
-            base_value = station_count * 3500
-        else:
-            raise HTTPException(status_code=400, detail="不支持的时间周期")
+        for ctx in contexts[:5]:
+            try:
+                trend_data = await compute_trend_for_station(ctx["config"], period)
+            except RealDataUnavailable as exc:
+                logger.debug("站点%s趋势数据不可用: %s", ctx["display_name"], exc)
+                continue
 
-        # 生成时间序列和数据
-        now = datetime.now()
-        timestamps = []
-        values = []
+            values = [round(val, 2) for val in trend_data.get("values", [])]
+            current_timestamps = trend_data.get("timestamps", [])
+            if not values or not current_timestamps:
+                continue
 
-        for i in range(data_points):
-            if period == "24h":
-                time_point = now - timedelta(hours=data_points - 1 - i)
+            if timestamps is None:
+                timestamps = current_timestamps
+                aggregated_values = values
             else:
-                time_point = now - timedelta(days=data_points - 1 - i)
+                if len(values) != len(timestamps):
+                    min_len = min(len(values), len(timestamps))
+                    timestamps = timestamps[:min_len]
+                    if aggregated_values is not None:
+                        aggregated_values = aggregated_values[:min_len]
+                    values = values[:min_len]
+                if aggregated_values is None:
+                    aggregated_values = values
+                else:
+                    aggregated_values = [
+                        round(existing + addition, 2)
+                        for existing, addition in zip(aggregated_values, values)
+                    ]
 
-            timestamps.append(time_point.strftime(time_format))
+        if aggregated_values and timestamps:
+            return {
+                "values": aggregated_values,
+                "timestamps": timestamps,
+                "period": period,
+                "station_count": station_count or len(contexts),
+                "update_time": datetime.now().isoformat(),
+            }
 
-            # 模拟能耗数据，加入随机波动和趋势
-            trend_factor = 1.0 - (i / data_points) * 0.1  # 轻微下降趋势（节能效果）
-            random_factor = random.uniform(0.85, 1.15)
-            value = base_value * trend_factor * random_factor
-            values.append(round(value, 1))
+        raise RealDataUnavailable("no trend data available")
 
-        return {
-            "values": values,
-            "timestamps": timestamps,
-            "period": period,
-            "station_count": station_count,
-            "update_time": datetime.now().isoformat(),
-        }
-
+    except RealDataUnavailable as exc:
+        logger.warning("趋势数据回退到模拟数据: %s", exc)
+        return _mock_trend_payload(period, station_count or len(contexts) or 1)
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"获取趋势数据失败: {e}")
         raise HTTPException(status_code=500, detail=f"获取趋势数据失败: {str(e)}")
@@ -637,51 +898,48 @@ async def get_kpi_data(
     获取KPI指标数据
     包括：今日总能耗、当前功率、峰值功率、监控车站数
     """
+    station_count = _get_station_count_for_line(line)
+
     try:
-        # 确定站点IP
         target_station_ip = station_ip or x_station_ip
+        if not target_station_ip:
+            raise RealDataUnavailable("station scope required for live KPI data")
 
-        # 获取站点列表
-        stations = []
-        if target_station_ip:
-            station_config = electricity_config.get_station_by_ip(target_station_ip)
-            if station_config:
-                stations = [station_config]
-        elif line:
-            stations = electricity_config.get_stations_by_line(line)
-        else:
-            stations = electricity_config.get_all_stations()
+        contexts = _resolve_station_contexts(line, target_station_ip)
+        if not contexts:
+            raise RealDataUnavailable("no matching station configuration")
 
-        station_count = len(stations)
+        total_kwh_today = 0.0
+        current_kw = 0.0
+        peak_kw = 0.0
 
-        # 模拟KPI数据计算
-        # 基于站点数量计算基础值
-        base_power_per_station = 150  # 每站点基础功率(kW)
+        for ctx in contexts[:5]:
+            try:
+                metrics = await compute_kpi_for_station(ctx["config"])
+            except RealDataUnavailable as exc:
+                logger.debug("站点%s KPI数据不可用: %s", ctx["display_name"], exc)
+                continue
 
-        # 当前功率：各站点当前功率之和，加入随机波动
-        current_kw = sum(
-            base_power_per_station * (0.8 + 0.4 * random.random())
-            for _ in range(station_count)
-        )
-        current_kw = round(current_kw, 1)
+            total_kwh_today += metrics.get("total_kwh_today", 0.0)
+            current_kw += metrics.get("current_kw", 0.0)
+            peak_kw += metrics.get("peak_kw", 0.0)
 
-        # 峰值功率：当前功率的1.2-1.5倍
-        peak_kw = current_kw * random.uniform(1.2, 1.5)
-        peak_kw = round(peak_kw, 1)
+        if total_kwh_today or current_kw or peak_kw:
+            return {
+                "total_kwh_today": round(total_kwh_today, 2),
+                "current_kw": round(current_kw, 2),
+                "peak_kw": round(peak_kw, 2),
+                "station_count": station_count or len(contexts),
+                "update_time": datetime.now().isoformat(),
+            }
 
-        # 今日总能耗：根据当前功率估算（假设当前已经运行了部分时间）
-        hours_elapsed = datetime.now().hour + datetime.now().minute / 60
-        total_kwh_today = current_kw * hours_elapsed * random.uniform(0.8, 1.2)
-        total_kwh_today = round(total_kwh_today, 1)
+        raise RealDataUnavailable("no kpi data available")
 
-        return {
-            "total_kwh_today": total_kwh_today,
-            "current_kw": current_kw,
-            "peak_kw": peak_kw,
-            "station_count": station_count,
-            "update_time": datetime.now().isoformat(),
-        }
-
+    except RealDataUnavailable as exc:
+        logger.warning("KPI数据回退到模拟数据: %s", exc)
+        return _mock_kpi_payload(station_count or len(contexts) or 1)
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"获取KPI数据失败: {e}")
         raise HTTPException(status_code=500, detail=f"获取KPI数据失败: {str(e)}")
@@ -698,54 +956,60 @@ async def get_compare_data(
     获取同比环比对比数据
     返回同比百分比(yoy_percent)、环比百分比(mom_percent)、当前周期能耗(current_kwh)
     """
+    if period not in {"24h", "7d", "30d"}:
+        raise HTTPException(status_code=400, detail="不支持的时间周期")
+
+    station_count = _get_station_count_for_line(line)
+
     try:
-        # 确定站点IP
         target_station_ip = station_ip or x_station_ip
+        contexts = _resolve_station_contexts(line, target_station_ip)
+        if not contexts:
+            raise RealDataUnavailable("no matching station configuration")
 
-        # 获取站点列表
-        stations = []
-        if target_station_ip:
-            station_config = electricity_config.get_station_by_ip(target_station_ip)
-            if station_config:
-                stations = [station_config]
-        elif line:
-            stations = electricity_config.get_stations_by_line(line)
-        else:
-            stations = electricity_config.get_all_stations()
+        current_total = 0.0
+        previous_total = 0.0
+        last_year_total = 0.0
 
-        station_count = len(stations)
+        for ctx in contexts[:5]:
+            try:
+                metrics = await compute_compare_for_station(ctx["config"], period)
+            except RealDataUnavailable as exc:
+                logger.debug("站点%s对比数据不可用: %s", ctx["display_name"], exc)
+                continue
 
-        # 根据周期计算基准能耗
-        if period == "24h":
-            base_kwh = station_count * 3500  # 每站点日均3500kWh
-        elif period == "7d":
-            base_kwh = station_count * 3500 * 7
-        elif period == "30d":
-            base_kwh = station_count * 3500 * 30
-        else:
-            base_kwh = station_count * 3500
+            current_total += metrics.get("current_kwh", 0.0)
+            previous_total += metrics.get("previous_kwh", 0.0)
+            last_year_total += metrics.get("last_year_kwh", 0.0)
 
-        # 当前周期能耗（加入随机波动）
-        current_kwh = base_kwh * random.uniform(0.9, 1.1)
-        current_kwh = round(current_kwh, 1)
+        if current_total or previous_total or last_year_total:
+            mom_percent = (
+                (current_total - previous_total) / previous_total * 100.0
+                if previous_total > 0
+                else 0.0
+            )
+            yoy_percent = (
+                (current_total - last_year_total) / last_year_total * 100.0
+                if last_year_total > 0
+                else 0.0
+            )
 
-        # 同比变化（与去年同期对比）：模拟节能效果，一般为负值或小正值
-        yoy_percent = random.uniform(-15, 5)
-        yoy_percent = round(yoy_percent, 1)
+            return {
+                "current_kwh": round(current_total, 2),
+                "yoy_percent": round(yoy_percent, 1),
+                "mom_percent": round(mom_percent, 1),
+                "period": period,
+                "station_count": station_count or len(contexts),
+                "update_time": datetime.now().isoformat(),
+            }
 
-        # 环比变化（与上一周期对比）：波动较小
-        mom_percent = random.uniform(-10, 10)
-        mom_percent = round(mom_percent, 1)
+        raise RealDataUnavailable("no compare data available")
 
-        return {
-            "current_kwh": current_kwh,
-            "yoy_percent": yoy_percent,
-            "mom_percent": mom_percent,
-            "period": period,
-            "station_count": station_count,
-            "update_time": datetime.now().isoformat(),
-        }
-
+    except RealDataUnavailable as exc:
+        logger.warning("同比环比数据回退到模拟数据: %s", exc)
+        return _mock_compare_payload(period, station_count or len(contexts) or 1)
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"获取对比数据失败: {e}")
         raise HTTPException(status_code=500, detail=f"获取对比数据失败: {str(e)}")
@@ -762,75 +1026,68 @@ async def get_classification_data(
     获取分类分项能耗数据
     返回各类设备的能耗占比，用于饼图展示
     """
+    if period not in {"24h", "7d", "30d"}:
+        raise HTTPException(status_code=400, detail="不支持的统计周期")
+
+    station_count = _get_station_count_for_line(line)
+
     try:
-        # 确定站点IP
         target_station_ip = station_ip or x_station_ip
+        contexts = _resolve_station_contexts(line, target_station_ip)
+        if not contexts:
+            raise RealDataUnavailable("no matching station configuration")
 
-        # 获取站点列表
-        stations = []
-        if target_station_ip:
-            station_config = electricity_config.get_station_by_ip(target_station_ip)
-            if station_config:
-                stations = [station_config]
-        elif line:
-            stations = electricity_config.get_stations_by_line(line)
-        else:
-            stations = electricity_config.get_all_stations()
+        category_totals: Dict[str, float] = {}
+        total_kwh = 0.0
 
-        station_count = len(stations)
+        for ctx in contexts[:5]:
+            try:
+                data = await compute_classification_for_station(ctx["config"], period)
+            except RealDataUnavailable as exc:
+                logger.debug("站点%s分类数据不可用: %s", ctx["display_name"], exc)
+                continue
 
-        # 定义设备分类及其占比范围
-        categories = [
-            {"name": "冷机系统", "ratio_range": (0.35, 0.45)},
-            {"name": "水泵系统", "ratio_range": (0.15, 0.25)},
-            {"name": "冷却塔", "ratio_range": (0.08, 0.15)},
-            {"name": "通风系统", "ratio_range": (0.10, 0.18)},
-            {"name": "照明系统", "ratio_range": (0.05, 0.12)},
-            {"name": "其他设备", "ratio_range": (0.03, 0.08)},
-        ]
+            total_kwh += data.get("total_kwh", 0.0)
+            for item in data.get("items", []):
+                value = item.get("kwh")
+                if value is None:
+                    continue
+                category_name = item.get("name", "其他")
+                category_totals[category_name] = category_totals.get(
+                    category_name, 0.0
+                ) + float(value)
 
-        # 根据周期计算总能耗
-        if period == "24h":
-            total_kwh = station_count * 3500
-        elif period == "7d":
-            total_kwh = station_count * 3500 * 7
-        elif period == "30d":
-            total_kwh = station_count * 3500 * 30
-        else:
-            total_kwh = station_count * 3500
-
-        # 生成各分类能耗数据
-        items = []
-        remaining_kwh = total_kwh
-
-        for i, category in enumerate(categories):
-            if i == len(categories) - 1:
-                # 最后一项使用剩余能耗
-                kwh = remaining_kwh
-            else:
-                # 根据占比范围随机生成
-                ratio = random.uniform(
-                    category["ratio_range"][0], category["ratio_range"][1]
+        if category_totals:
+            aggregated_total = total_kwh or sum(category_totals.values())
+            items = []
+            for name, value in category_totals.items():
+                percentage = (
+                    (value / aggregated_total * 100.0) if aggregated_total > 0 else 0.0
                 )
-                kwh = total_kwh * ratio
-                remaining_kwh -= kwh
+                items.append(
+                    {
+                        "name": name,
+                        "kwh": round(value, 2),
+                        "percentage": round(percentage, 1),
+                    }
+                )
+            items.sort(key=lambda item: item["kwh"], reverse=True)
 
-            items.append(
-                {
-                    "name": category["name"],
-                    "kwh": round(kwh, 1),
-                    "percentage": round((kwh / total_kwh) * 100, 1),
-                }
-            )
+            return {
+                "items": items,
+                "total_kwh": round(aggregated_total, 2),
+                "period": period,
+                "station_count": station_count or len(contexts),
+                "update_time": datetime.now().isoformat(),
+            }
 
-        return {
-            "items": items,
-            "total_kwh": round(total_kwh, 1),
-            "period": period,
-            "station_count": station_count,
-            "update_time": datetime.now().isoformat(),
-        }
+        raise RealDataUnavailable("no classification data available")
 
+    except RealDataUnavailable as exc:
+        logger.warning("分类能耗数据回退到模拟数据: %s", exc)
+        return _mock_classification_payload(period, station_count or len(contexts) or 1)
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"获取分类能耗数据失败: {e}")
         raise HTTPException(status_code=500, detail=f"获取分类能耗数据失败: {str(e)}")
