@@ -104,7 +104,7 @@ echo [信息] 等待后端服务就绪...
 set "BACKEND_READY=0"
 for /l %%i in (1,1,30) do (
     timeout /t 1 /nobreak >nul
-    powershell -NoLogo -NoProfile -Command "try { (Invoke-WebRequest 'http://localhost:%BACKEND_PORT%/docs' -UseBasicParsing -TimeoutSec 2) | Out-Null; exit 0 } catch { exit 1 }" >nul 2>&1
+    netstat -an | findstr ":%BACKEND_PORT%" >nul 2>&1
     if !errorlevel! equ 0 (
         set "BACKEND_READY=1"
         goto :BACKEND_CHECK_DONE
@@ -144,7 +144,7 @@ echo [信息] 等待前端服务就绪...
 set "FRONTEND_READY=0"
 for /l %%i in (1,1,30) do (
     timeout /t 1 /nobreak >nul
-    powershell -NoLogo -NoProfile -Command "try { (Invoke-WebRequest 'http://localhost:%FRONTEND_PORT%' -UseBasicParsing -TimeoutSec 2) | Out-Null; exit 0 } catch { exit 1 }" >nul 2>&1
+    netstat -an | findstr ":%FRONTEND_PORT%" >nul 2>&1
     if !errorlevel! equ 0 (
         set "FRONTEND_READY=1"
         goto :FRONTEND_CHECK_DONE
