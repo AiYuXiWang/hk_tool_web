@@ -64,6 +64,16 @@ uv pip install -r requirements/development.txt
 - **Vite**: 前端构建工具
 - **Axios**: HTTP 客户端
 
+## 📐 Spec Coding 开发流程
+
+为确保后续开发质量一致，本项目已经全面启用 Spec Coding 规范：
+
+- 所有新功能必须先编写规格文档再实现代码
+- 规格文档位于 `specs/` 目录，按后端 / 前端 / 集成分类管理
+- 可通过 `python tools/create_spec.py` 或 `make spec-new-*` 快速生成规格草稿
+- 使用 `python tools/spec_validation/validate_api_spec.py` 或 `make spec-validate` 校验规格与实现的一致性
+- 详细流程见 [Spec Coding 开发规范](docs/SPEC_CODING_GUIDE.md) 与 [Spec Coding 快速入门](docs/SPEC_CODING_QUICKSTART.md)
+
 ## 📁 项目结构
 
 ```
@@ -79,6 +89,11 @@ hk_tool_web/
 ├── docs/                       # 项目文档
 │   ├── openapi/               # API 文档
 │   └── *.md                   # 各种说明文档
+├── specs/                      # Spec Coding 规格文档（新增）
+│   ├── backend/               # 后端规格
+│   ├── frontend/              # 前端规格
+│   ├── integration/           # 集成规格
+│   └── templates/             # 规格模板
 ├── templates/                  # 模板文件
 ├── main.py                     # FastAPI 主应用
 ├── control_service.py          # 设备控制服务

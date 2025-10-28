@@ -35,3 +35,6 @@ alembic==1.13.0
 
 # 开发服务器增强
 python-multipart==0.0.6
+
+# Spec Coding 工具依赖
+pyyaml==6.0.1
