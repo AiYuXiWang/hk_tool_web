@@ -265,9 +265,10 @@ make spec-validate
 
 1. ✅ **阅读规范** - 阅读 [Spec Coding 开发规范](docs/SPEC_CODING_GUIDE.md)
 2. ✅ **学习快速入门** - 阅读 [Spec Coding 快速入门](docs/SPEC_CODING_QUICKSTART.md)
-3. ✅ **查看示例** - 学习示例规格文档
-4. 🔜 **开始实践** - 为下一个功能编写规格文档
-5. 🔜 **严格遵循** - 后续所有开发严格按照 Spec Coding 流程进行
+3. ✅ **了解 cto.new 工作流程** - 阅读 [cto.new 任务创建指南](docs/CTO_NEW_SPEC_CODING_WORKFLOW.md)
+4. ✅ **查看示例** - 学习示例规格文档
+5. 🔜 **开始实践** - 为下一个功能编写规格文档
+6. 🔜 **严格遵循** - 后续所有开发严格按照 Spec Coding 流程进行
 
 ## 重要提醒
 

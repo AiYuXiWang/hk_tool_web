@@ -206,6 +206,7 @@ A: 使用自动化验证工具，在 CI/CD 流程中强制执行，同时在代�
 ## 参考资源
 
 - [Spec Coding 完整指南](./SPEC_CODING_GUIDE.md)
+- [cto.new 任务创建指南](./CTO_NEW_SPEC_CODING_WORKFLOW.md)
 - [API 规格模板](../specs/templates/API_SPEC_TEMPLATE.md)
 - [数据模型规格模板](../specs/templates/MODEL_SPEC_TEMPLATE.md)
 - [组件规格模板](../specs/templates/COMPONENT_SPEC_TEMPLATE.md)

@@ -394,6 +394,7 @@ A: 简单的 bug 修复不需要完整的规格文档，但应该在相关的规
 
 ## 参考资源
 
+- [cto.new 任务创建指南](./CTO_NEW_SPEC_CODING_WORKFLOW.md)
 - [API 规格模板](../specs/templates/API_SPEC_TEMPLATE.md)
 - [数据模型规格模板](../specs/templates/MODEL_SPEC_TEMPLATE.md)
 - [组件规格模板](../specs/templates/COMPONENT_SPEC_TEMPLATE.md)
