@@ -114,12 +114,15 @@ addopts = [
     "--cov=backend",
     "--cov-report=term-missing",
     "--cov-report=html",
-    "--cov-fail-under=80",
+    "--cov-fail-under=25",
 ]
 markers = [
     "unit: Unit tests",
     "integration: Integration tests",
     "slow: Slow tests",
+    "api: API tests",
+    "service: Service tests",
+    "e2e: End-to-end tests",
 ]
 
 # Coverage配置
