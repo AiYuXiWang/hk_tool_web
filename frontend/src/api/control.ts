@@ -357,7 +357,7 @@ export type LineConfigs = {
 /** 线路-车站配置获取 */
 export async function fetchLineConfigs(): Promise<LineConfigs> {
   const { data } = await http.get('/api/config/line_configs')
-  return data.data
+  return unwrap<LineConfigs>(data)
 }
 // 设备控制与批量写值 API 封装
 export type DeviceTreeNode = {
