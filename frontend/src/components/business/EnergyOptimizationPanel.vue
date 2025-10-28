@@ -178,17 +178,27 @@ const handleDismiss = (suggestion: OptimizationSuggestion) => {
   align-items: center;
   justify-content: center;
   height: 300px;
-  color: var(--text-color-secondary);
+  color: rgba(255, 255, 255, 0.7);
+  text-align: center;
+  gap: 12px;
+}
+
+.loading-state p,
+.error-state p,
+.empty-state p {
+  margin: 0;
+  font-size: 15px;
+  letter-spacing: 0.05em;
 }
 
 .loading-spinner {
-  width: 32px;
-  height: 32px;
-  border: 3px solid var(--border-color);
-  border-top: 3px solid var(--primary-color);
+  width: 40px;
+  height: 40px;
+  border: 4px solid rgba(0, 212, 255, 0.15);
+  border-top: 4px solid rgba(0, 212, 255, 0.85);
   border-radius: 50%;
-  animation: spin 1s linear infinite;
-  margin-bottom: 16px;
+  animation: spin 1s linear infinite, glowPulse 1.8s ease-in-out infinite;
+  margin-bottom: 12px;
 }
 
 @keyframes spin {
@@ -203,20 +213,25 @@ const handleDismiss = (suggestion: OptimizationSuggestion) => {
 }
 
 .suggestion-item {
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  padding: 16px;
-  background: var(--bg-color);
-  transition: all 0.3s ease;
+  border: 1px solid rgba(0, 212, 255, 0.25);
+  border-radius: 16px;
+  padding: 20px;
+  background: linear-gradient(135deg, rgba(14, 23, 51, 0.7) 0%, rgba(18, 32, 58, 0.6) 100%);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.3);
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .suggestion-item:hover {
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 12px 40px rgba(0, 212, 255, 0.25);
+  border-color: rgba(0, 212, 255, 0.5);
+  transform: translateY(-3px) scale(1.01);
 }
 
 .suggestion-item.implemented {
-  opacity: 0.7;
-  background: var(--bg-color-light);
+  opacity: 0.65;
+  background: linear-gradient(135deg, rgba(14, 23, 51, 0.6) 0%, rgba(18, 32, 58, 0.5) 100%);
+  border-color: rgba(82, 196, 26, 0.3);
 }
 
 .suggestion-header {
@@ -233,87 +248,135 @@ const handleDismiss = (suggestion: OptimizationSuggestion) => {
 }
 
 .priority-badge {
-  padding: 2px 8px;
-  border-radius: 12px;
+  padding: 4px 12px;
+  border-radius: 999px;
   font-size: 12px;
-  font-weight: 500;
-  color: white;
+  font-weight: 600;
+  color: rgba(15, 25, 45, 0.95);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(8px);
 }
 
 .priority-badge.priority-high {
-  background: #f56565;
+  background: linear-gradient(135deg, rgba(255, 77, 79, 0.85) 0%, rgba(255, 138, 141, 0.95) 100%);
+  box-shadow: 0 8px 24px rgba(255, 77, 79, 0.35);
 }
 
 .priority-badge.priority-medium {
-  background: #ed8936;
+  background: linear-gradient(135deg, rgba(250, 173, 20, 0.85) 0%, rgba(255, 214, 102, 0.95) 100%);
+  box-shadow: 0 8px 24px rgba(250, 173, 20, 0.35);
 }
 
 .priority-badge.priority-low {
-  background: #48bb78;
+  background: linear-gradient(135deg, rgba(82, 196, 26, 0.85) 0%, rgba(143, 239, 123, 0.95) 100%);
+  box-shadow: 0 8px 24px rgba(82, 196, 26, 0.35);
 }
 
 .suggestion-title h4 {
   margin: 0;
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 600;
-  color: var(--text-color);
+  color: rgba(255, 255, 255, 0.95);
+  letter-spacing: 0.03em;
 }
 
 .suggestion-actions {
   display: flex;
-  gap: 8px;
+  gap: 10px;
+}
+
+.suggestion-actions :deep(.el-button) {
+  background: linear-gradient(135deg, rgba(0, 212, 255, 0.2) 0%, rgba(18, 32, 58, 0.7) 100%);
+  border-color: rgba(0, 212, 255, 0.35);
+  color: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 8px 20px rgba(0, 212, 255, 0.18);
+  transition: all 0.3s ease;
+}
+
+.suggestion-actions :deep(.el-button:hover) {
+  border-color: rgba(0, 212, 255, 0.65);
+  color: #fff;
+  box-shadow: 0 12px 28px rgba(0, 212, 255, 0.25);
+}
+
+.suggestion-actions :deep(.el-button.is-text),
+.suggestion-actions :deep(.el-button.el-button--text) {
+  background: transparent;
+  border-color: transparent;
+  color: rgba(0, 212, 255, 0.85);
+  box-shadow: none;
+}
+
+.suggestion-actions :deep(.el-button.is-text:hover),
+.suggestion-actions :deep(.el-button.el-button--text:hover) {
+  color: rgba(0, 255, 204, 0.95);
 }
 
 .suggestion-content .description {
   margin: 0 0 16px 0;
-  color: var(--text-color-secondary);
-  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.75);
+  line-height: 1.6;
 }
 
 .metrics {
   display: flex;
   gap: 24px;
-  margin-bottom: 16px;
+  margin-bottom: 18px;
   flex-wrap: wrap;
 }
 
 .metric {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(13, 25, 47, 0.65) 0%, rgba(16, 32, 60, 0.5) 100%);
+  border: 1px solid rgba(0, 212, 255, 0.15);
+  min-width: 140px;
 }
 
 .metric .label {
   font-size: 12px;
-  color: var(--text-color-secondary);
+  color: rgba(255, 255, 255, 0.55);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .metric .value {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
 }
 
 .metric .value.energy-saving {
-  color: #48bb78;
+  color: rgba(82, 196, 26, 0.95);
 }
 
 .metric .value.cost-saving {
-  color: #3182ce;
+  color: rgba(24, 144, 255, 0.95);
 }
 
 .metric .value.difficulty {
-  color: var(--text-color);
+  color: rgba(0, 212, 255, 0.9);
 }
 
 .implementation-steps {
-  margin-top: 16px;
+  margin-top: 20px;
+  padding: 16px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(13, 25, 47, 0.6) 0%, rgba(16, 32, 60, 0.45) 100%);
+  border: 1px solid rgba(0, 212, 255, 0.12);
 }
 
 .implementation-steps h5 {
   margin: 0 0 8px 0;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
-  color: var(--text-color);
+  color: rgba(255, 255, 255, 0.9);
+  letter-spacing: 0.04em;
 }
 
 .implementation-steps ol {
@@ -322,26 +385,34 @@ const handleDismiss = (suggestion: OptimizationSuggestion) => {
 }
 
 .implementation-steps li {
-  margin-bottom: 4px;
-  color: var(--text-color-secondary);
+  margin-bottom: 6px;
+  color: rgba(255, 255, 255, 0.65);
   font-size: 14px;
-  line-height: 1.4;
+  line-height: 1.5;
 }
 
 .panel-footer {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-top: 24px;
-  padding-top: 16px;
-  border-top: 1px solid var(--border-color);
+  margin-top: 28px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(0, 212, 255, 0.18);
+}
+
+.panel-footer :deep(.el-button) {
+  background: linear-gradient(135deg, rgba(0, 212, 255, 0.25) 0%, rgba(0, 255, 204, 0.45) 100%);
+  color: #0b2432;
+  border-color: transparent;
+  box-shadow: 0 10px 30px rgba(0, 212, 255, 0.25);
 }
 
 .summary {
   display: flex;
   gap: 16px;
   font-size: 14px;
-  color: var(--text-color-secondary);
+  color: rgba(255, 255, 255, 0.6);
+  letter-spacing: 0.04em;
 }
 
 /* 响应式设计 */
