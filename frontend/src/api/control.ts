@@ -11,7 +11,7 @@ export const http: AxiosInstance = axios.create({
 })
 
 // 统一解包后端标准响应 { code, message, data, ... }
-function unwrap<T = any>(resp: any): T {
+export function unwrap<T = any>(resp: any): T {
   try {
     if (resp && typeof resp === 'object') {
       if ('data' in resp && ('code' in resp || 'message' in resp)) {
