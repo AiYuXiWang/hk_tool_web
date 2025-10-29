@@ -415,24 +415,28 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: var(--spacing-xs);
-  background: transparent;
-  border: 1px solid rgba(0, 212, 255, 0.3);
-  border-radius: var(--border-radius-sm);
-  color: var(--color-text-secondary);
+  padding: var(--spacing-sm);
+  background: linear-gradient(135deg, rgba(14, 23, 51, 0.7) 0%, rgba(18, 32, 58, 0.6) 100%);
+  border: 1px solid rgba(0, 212, 255, 0.35);
+  border-radius: 12px;
+  color: rgba(255, 255, 255, 0.9);
   cursor: pointer;
-  transition: all var(--duration-base) var(--ease-out);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 6px 18px rgba(0, 212, 255, 0.15);
+  backdrop-filter: blur(10px);
 }
 
 .action-btn:hover:not(:disabled) {
-  background: rgba(0, 212, 255, 0.1);
-  border-color: rgba(0, 212, 255, 0.6);
-  color: var(--color-primary);
-  transform: translateY(-1px);
+  background: linear-gradient(135deg, rgba(0, 212, 255, 0.25) 0%, rgba(18, 32, 58, 0.7) 100%);
+  border-color: rgba(0, 212, 255, 0.7);
+  color: #fff;
+  transform: translateY(-2px);
+  box-shadow: 0 10px 28px rgba(0, 212, 255, 0.28);
 }
 
 .action-btn:active:not(:disabled) {
   transform: translateY(0);
+  box-shadow: 0 4px 12px rgba(0, 212, 255, 0.2);
 }
 
 .action-btn:disabled {

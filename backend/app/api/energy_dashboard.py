@@ -801,25 +801,41 @@ async def get_classification_data(
 
         # 生成各分类能耗数据
         items = []
-        remaining_kwh = total_kwh
+        used_ratio_sum = 0.0
+        kwh_values = []
 
         for i, category in enumerate(categories):
             if i == len(categories) - 1:
-                # 最后一项使用剩余能耗
-                kwh = remaining_kwh
+                # 最后一项使用剩余比例，确保总和为1.0
+                ratio = 1.0 - used_ratio_sum
+                # 确保ratio在合理范围内
+                ratio = max(0.01, min(ratio, 0.20))
             else:
                 # 根据占比范围随机生成
                 ratio = random.uniform(
                     category["ratio_range"][0], category["ratio_range"][1]
                 )
-                kwh = total_kwh * ratio
-                remaining_kwh -= kwh
+                used_ratio_sum += ratio
+
+            kwh = total_kwh * ratio
+            kwh_values.append(kwh)
+
+        # 归一化确保总和等于total_kwh
+        actual_total = sum(kwh_values)
+        normalization_factor = total_kwh / actual_total
+
+        for i, category in enumerate(categories):
+            normalized_kwh = kwh_values[i] * normalization_factor
+            percentage = (normalized_kwh / total_kwh) * 100
+
+            # 确保百分比在0-100范围内
+            percentage = max(0.0, min(percentage, 100.0))
 
             items.append(
                 {
                     "name": category["name"],
-                    "kwh": round(kwh, 1),
-                    "percentage": round((kwh / total_kwh) * 100, 1),
+                    "kwh": round(normalized_kwh, 1),
+                    "percentage": round(percentage, 1),
                 }
             )
 

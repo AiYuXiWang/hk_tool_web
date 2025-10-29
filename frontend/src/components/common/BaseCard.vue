@@ -75,17 +75,43 @@ const bodyClasses = computed(() => {
 
 /* 边框样式 */
 .card-bordered {
-  border: 1px solid var(--color-border-secondary);
+  border: 1px solid rgba(0, 212, 255, 0.25);
 }
 
 /* 悬停效果 */
 .card-hoverable {
   cursor: pointer;
+  position: relative;
+}
+
+.card-hoverable::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, 
+    transparent 0%, 
+    rgba(0, 212, 255, 0.5) 25%, 
+    rgba(138, 43, 226, 0.5) 50%,
+    rgba(0, 255, 204, 0.5) 75%, 
+    transparent 100%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  z-index: 1;
+}
+
+.card-hoverable:hover::before {
+  opacity: 1;
 }
 
 .card-hoverable:hover {
-  box-shadow: var(--shadow-hover);
-  transform: translateY(-2px);
+  box-shadow: 
+    0 12px 40px rgba(0, 212, 255, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  transform: translateY(-3px);
+  border-color: rgba(0, 212, 255, 0.45);
 }
 
 /* 加载状态 */

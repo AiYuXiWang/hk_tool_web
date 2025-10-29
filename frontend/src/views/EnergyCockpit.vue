@@ -404,12 +404,16 @@ watch([selectedLine, selectedStation], () => {
 
 <style scoped>
 .energy-cockpit {
+  position: relative;
   padding: var(--spacing-layout-md);
-  background: radial-gradient(1200px circle at 20% 0%, rgba(0,212,255,0.08) 0%, rgba(0,212,255,0) 40%),
-              linear-gradient(180deg, #0b1020 0%, #0e1733 100%);
+  background: 
+    radial-gradient(ellipse 1200px 800px at 20% 0%, rgba(0, 212, 255, 0.12) 0%, transparent 50%),
+    radial-gradient(ellipse 1000px 700px at 80% 100%, rgba(138, 43, 226, 0.08) 0%, transparent 50%),
+    linear-gradient(135deg, #0a0e1a 0%, #0d1425 25%, #0e1733 50%, #0f1a3d 75%, #0d1429 100%);
   min-height: 100vh;
   color: var(--color-text-primary);
   animation: fadeIn 0.4s ease-out;
+  overflow: hidden;
   /* 局部文本令牌提亮，提高标签可读性 */
   --color-text-primary: #ffffff;
   --color-text-secondary: rgba(255,255,255,0.92);
@@ -417,6 +421,72 @@ watch([selectedLine, selectedStation], () => {
   /* Element Plus 输入/占位符文本令牌（局部） */
   --el-input-text-color: #ffffff;
   --el-input-placeholder-color: rgba(255,255,255,0.88);
+  --panel-radius: clamp(18px, 3vw, 28px);
+}
+
+/* 科技感背景动画 - 扫描线效果 */
+.energy-cockpit::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  right: -50%;
+  bottom: -50%;
+  background: 
+    linear-gradient(0deg, transparent 48%, rgba(0, 212, 255, 0.03) 49%, rgba(0, 212, 255, 0.06) 50%, rgba(0, 212, 255, 0.03) 51%, transparent 52%);
+  background-size: 100% 40px;
+  pointer-events: none;
+  animation: scanlines 8s linear infinite;
+  opacity: 0.6;
+}
+
+/* 发光粒子效果 */
+.energy-cockpit::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image: 
+    radial-gradient(2px 2px at 20% 30%, rgba(0, 212, 255, 0.6), transparent),
+    radial-gradient(2px 2px at 60% 70%, rgba(138, 43, 226, 0.6), transparent),
+    radial-gradient(1px 1px at 50% 50%, rgba(0, 255, 204, 0.6), transparent),
+    radial-gradient(1px 1px at 80% 10%, rgba(0, 212, 255, 0.4), transparent),
+    radial-gradient(2px 2px at 90% 60%, rgba(138, 43, 226, 0.4), transparent),
+    radial-gradient(1px 1px at 33% 80%, rgba(0, 255, 204, 0.4), transparent);
+  background-size: 200% 200%;
+  animation: particleFloat 20s ease-in-out infinite;
+  pointer-events: none;
+  opacity: 0.4;
+}
+
+.energy-cockpit > * {
+  position: relative;
+  z-index: 5;
+}
+@keyframes scanlines {
+  0% {
+    transform: translateY(0);
+  }
+  100% {
+    transform: translateY(40px);
+  }
+}
+
+@keyframes particleFloat {
+  0%, 100% {
+    background-position: 0% 0%, 100% 100%, 50% 50%, 80% 10%, 90% 60%, 33% 80%;
+  }
+  25% {
+    background-position: 100% 50%, 0% 50%, 25% 75%, 70% 20%, 80% 70%, 43% 70%;
+  }
+  50% {
+    background-position: 50% 100%, 50% 0%, 75% 25%, 60% 30%, 70% 80%, 53% 60%;
+  }
+  75% {
+    background-position: 0% 50%, 100% 50%, 25% 75%, 50% 40%, 60% 90%, 63% 50%;
+  }
 }
 
 @keyframes fadeIn {
@@ -431,20 +501,54 @@ watch([selectedLine, selectedStation], () => {
 }
 
 .control-bar {
+  position: relative;
   display: flex;
   gap: var(--spacing-md);
   margin-bottom: var(--spacing-md);
   padding: var(--spacing-md);
-  background: rgba(14, 23, 51, 0.65);
-  backdrop-filter: blur(6px);
+  background: 
+    linear-gradient(135deg, rgba(14, 23, 51, 0.75) 0%, rgba(20, 32, 60, 0.65) 100%);
+  backdrop-filter: blur(12px) saturate(180%);
   border-radius: var(--border-radius-lg);
   border: 1px solid rgba(0, 212, 255, 0.35);
-  box-shadow: var(--shadow-light);
+  box-shadow: 
+    0 8px 32px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 0 20px rgba(0, 212, 255, 0.15);
   align-items: center;
   flex-wrap: wrap;
+  z-index: 10;
   /* 关键修复：让输入框背景透明，避免白底白字 */
   --el-input-bg-color: transparent;
   --el-fill-color-blank: transparent;
+}
+
+/* 控制栏边缘发光效果 */
+.control-bar::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, 
+    transparent 0%, 
+    rgba(0, 212, 255, 0.6) 25%, 
+    rgba(0, 255, 204, 0.8) 50%, 
+    rgba(0, 212, 255, 0.6) 75%, 
+    transparent 100%);
+  border-radius: var(--border-radius-lg) var(--border-radius-lg) 0 0;
+  opacity: 0.8;
+  animation: glowPulse 3s ease-in-out infinite;
+}
+
+@keyframes glowPulse {
+  0%, 100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 
 /* 控制栏标签与选择器文字对比度增强 */
@@ -516,11 +620,26 @@ watch([selectedLine, selectedStation], () => {
 }
 
 .kpi-dashboard {
+  position: relative;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: var(--spacing-md);
   margin-bottom: var(--spacing-md);
+  padding: var(--spacing-sm);
+  border-radius: var(--panel-radius);
+  background: linear-gradient(135deg, rgba(12, 20, 42, 0.45) 0%, rgba(18, 40, 68, 0.35) 100%);
+  backdrop-filter: blur(10px) saturate(160%);
+  box-shadow: inset 0 0 0 1px rgba(0, 212, 255, 0.12);
   animation: slideUp 0.5s ease-out 0.1s both;
+}
+
+.kpi-dashboard::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 1px solid rgba(0, 212, 255, 0.08);
+  pointer-events: none;
 }
 
 @keyframes slideUp {
@@ -535,52 +654,170 @@ watch([selectedLine, selectedStation], () => {
 }
 
 .chart-section {
+  position: relative;
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: var(--spacing-lg);
   margin-bottom: var(--spacing-md);
+  padding: var(--spacing-sm);
+  border-radius: var(--panel-radius);
+  background: linear-gradient(135deg, rgba(12, 20, 42, 0.45) 0%, rgba(18, 40, 68, 0.35) 100%);
+  backdrop-filter: blur(10px) saturate(160%);
+}
+
+.chart-section::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 1px solid rgba(0, 212, 255, 0.08);
+  pointer-events: none;
 }
 
 .chart-container {
-  background: rgba(14, 23, 51, 0.65);
-  backdrop-filter: blur(6px);
-  border-radius: var(--border-radius-lg);
+  position: relative;
+  background: 
+    linear-gradient(135deg, rgba(14, 23, 51, 0.75) 0%, rgba(18, 28, 55, 0.65) 100%);
+  backdrop-filter: blur(16px) saturate(180%);
+  border-radius: var(--panel-radius);
   border: 1px solid rgba(0, 212, 255, 0.35);
-  box-shadow: var(--shadow-light);
+  box-shadow: 
+    0 8px 32px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 0 20px rgba(0, 212, 255, 0.1);
   overflow: hidden;
-  transition: all var(--duration-base) var(--ease-out);
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
   animation: slideUp 0.6s ease-out 0.2s both;
 }
 
+.chart-container :deep(.card-header),
+.device-monitor :deep(.card-header),
+.optimization-panel :deep(.card-header) {
+  background: linear-gradient(135deg, rgba(14, 23, 51, 0.6) 0%, rgba(16, 27, 48, 0.4) 100%);
+  border-bottom: 1px solid rgba(0, 212, 255, 0.18);
+  backdrop-filter: blur(14px) saturate(140%);
+  padding: var(--spacing-md) var(--spacing-lg);
+}
+
+.chart-container :deep(.card-title),
+.device-monitor :deep(.card-title),
+.optimization-panel :deep(.card-title) {
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.chart-container :deep(.card-body),
+.device-monitor :deep(.card-body),
+.optimization-panel :deep(.card-body) {
+  background: transparent;
+}
+
+.chart-container :deep(.card-footer),
+.device-monitor :deep(.card-footer),
+.optimization-panel :deep(.card-footer) {
+  background: rgba(255, 255, 255, 0.02);
+  border-top: 1px solid rgba(0, 212, 255, 0.12);
+}
+
+/* 图表容器顶部渐变光效 */
+.chart-container::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, 
+    transparent 0%, 
+    rgba(0, 212, 255, 0.5) 20%, 
+    rgba(138, 43, 226, 0.5) 50%,
+    rgba(0, 255, 204, 0.5) 80%, 
+    transparent 100%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.chart-container:hover::before {
+  opacity: 1;
+}
+
 .chart-container:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 8px 24px rgba(0, 212, 255, 0.2);
-  border-color: rgba(0, 212, 255, 0.5);
+  transform: translateY(-6px) scale(1.01);
+  box-shadow: 
+    0 12px 40px rgba(0, 212, 255, 0.25),
+    0 0 30px rgba(0, 212, 255, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  border-color: rgba(0, 212, 255, 0.6);
 }
 
 .bottom-section {
+  position: relative;
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: var(--spacing-lg);
+  padding: var(--spacing-sm);
+  border-radius: var(--panel-radius);
+  background: linear-gradient(135deg, rgba(12, 20, 42, 0.45) 0%, rgba(18, 40, 68, 0.35) 100%);
+  backdrop-filter: blur(10px) saturate(160%);
+}
+
+.bottom-section::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 1px solid rgba(0, 212, 255, 0.08);
+  pointer-events: none;
 }
 
 .device-monitor,
 .optimization-panel {
-  background: rgba(14, 23, 51, 0.65);
-  backdrop-filter: blur(6px);
-  border-radius: var(--border-radius-lg);
+  position: relative;
+  background: 
+    linear-gradient(135deg, rgba(14, 23, 51, 0.75) 0%, rgba(18, 28, 55, 0.65) 100%);
+  backdrop-filter: blur(16px) saturate(180%);
+  border-radius: var(--panel-radius);
   border: 1px solid rgba(0, 212, 255, 0.35);
-  box-shadow: var(--shadow-light);
+  box-shadow: 
+    0 8px 32px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 0 20px rgba(0, 212, 255, 0.1);
   overflow: hidden;
-  transition: all var(--duration-base) var(--ease-out);
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
   animation: slideUp 0.7s ease-out 0.3s both;
+}
+
+/* 底部面板顶部光效 */
+.device-monitor::before,
+.optimization-panel::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, 
+    transparent 0%, 
+    rgba(0, 212, 255, 0.5) 30%, 
+    rgba(0, 255, 204, 0.5) 70%, 
+    transparent 100%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.device-monitor:hover::before,
+.optimization-panel:hover::before {
+  opacity: 1;
 }
 
 .device-monitor:hover,
 .optimization-panel:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 8px 24px rgba(0, 212, 255, 0.2);
-  border-color: rgba(0, 212, 255, 0.5);
+  transform: translateY(-6px) scale(1.01);
+  box-shadow: 
+    0 12px 40px rgba(0, 212, 255, 0.25),
+    0 0 30px rgba(0, 212, 255, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  border-color: rgba(0, 212, 255, 0.6);
 }
 
 /* 响应式设计 */
