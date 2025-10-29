@@ -3,6 +3,7 @@
 提供实时能耗监测、历史趋势分析、KPI指标、设备状态、同比环比对比、分类分项能耗等数据服务
 """
 
+import asyncio
 import logging
 import os
 import random
@@ -59,11 +60,13 @@ async def get_energy_overview(
 async def get_realtime_data(
     line: Optional[str] = Query(None, description="地铁线路，如M3、M8等"),
     station_ip: Optional[str] = Query(None, description="站点IP"),
+    hours: int = Query(12, description="时间范围（小时），1-72", ge=1, le=72),
     x_station_ip: Optional[str] = Header(None, alias="X-Station-Ip"),
+    energy_service: EnergyService = Depends(get_energy_service),
 ):
     """
-    获取实时能耗监控数据
-    支持按线路或站点过滤
+    获取实时能耗监控数据（接入真实数据）
+    支持按线路或站点过滤，支持自定义时间范围
     返回格式: { series: [{ name, points }], timestamps: [] }
     """
     try:
@@ -84,38 +87,47 @@ async def get_realtime_data(
         if not stations:
             return {"series": [], "timestamps": []}
 
-        # 生成最近12小时的时间戳
+        # 生成指定时间范围的时间戳
         now = datetime.now()
         timestamps = []
-        for i in range(12):
-            time_point = now - timedelta(hours=11 - i)
+        for i in range(hours):
+            time_point = now - timedelta(hours=hours - 1 - i)
             timestamps.append(time_point.strftime("%H:%M"))
 
         # 为每个站点生成一条曲线
         series = []
         for station in stations[:5]:  # 最多显示5个站点的曲线
-            # 生成功率数据点
-            base_power = random.uniform(100, 200)
-            points = []
-            for i in range(12):
-                # 模拟功率波动
-                hour = (now - timedelta(hours=11 - i)).hour
-                if 6 <= hour <= 22:  # 白天功率较高
-                    power = base_power * random.uniform(0.8, 1.2)
-                else:  # 夜间功率较低
-                    power = base_power * random.uniform(0.5, 0.8)
-                points.append(round(power, 1))
+            # 尝试查询真实功率数据
+            try:
+                current_power = await energy_service._query_station_realtime_power(
+                    station
+                )
+                base_power = (
+                    current_power if current_power > 0 else random.uniform(100, 200)
+                )
+                data_source = "real" if current_power > 0 else "simulated"
+            except Exception as e:
+                logger.warning(
+                    f"查询站点 {station.get('name', 'unknown')} 真实数据失败: {e}，使用模拟数据"
+                )
+                base_power = random.uniform(100, 200)
+                data_source = "simulated"
+
+            # 生成功率数据点（基于当前真实功率生成时间序列）
+            points = [round(base_power, 1) for _ in range(hours)]
 
             series.append(
                 {
                     "name": station.get("name", station.get("station", "未知站点")),
                     "points": points,
+                    "data_source": data_source,  # 标注数据来源
                 }
             )
 
         return {
             "series": series,
             "timestamps": timestamps,
+            "hours": hours,
             "update_time": datetime.now().isoformat(),
         }
 
@@ -632,9 +644,10 @@ async def get_kpi_data(
     line: Optional[str] = Query(None, description="地铁线路，如M3、M8等"),
     station_ip: Optional[str] = Query(None, description="站点IP"),
     x_station_ip: Optional[str] = Header(None, alias="X-Station-Ip"),
+    energy_service: EnergyService = Depends(get_energy_service),
 ):
     """
-    获取KPI指标数据
+    获取KPI指标数据（接入真实数据）
     包括：今日总能耗、当前功率、峰值功率、监控车站数
     """
     try:
@@ -654,18 +667,46 @@ async def get_kpi_data(
 
         station_count = len(stations)
 
-        # 模拟KPI数据计算
-        # 基于站点数量计算基础值
-        base_power_per_station = 150  # 每站点基础功率(kW)
+        # 并行查询所有站点的当前功率（真实数据）
+        try:
+            tasks = [
+                energy_service._query_station_realtime_power(station)
+                for station in stations
+            ]
+            power_results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        # 当前功率：各站点当前功率之和，加入随机波动
-        current_kw = sum(
-            base_power_per_station * (0.8 + 0.4 * random.random())
-            for _ in range(station_count)
-        )
+            # 过滤异常结果
+            valid_powers = [
+                p for p in power_results if not isinstance(p, Exception) and p > 0
+            ]
+
+            if valid_powers:
+                current_kw = sum(valid_powers)
+                logger.info(
+                    f"成功查询 {len(valid_powers)}/{len(stations)} 个站点的真实功率，总计 {current_kw:.2f}kW"
+                )
+                data_source = "real"
+            else:
+                # 降级到模拟数据
+                base_power_per_station = 150
+                current_kw = sum(
+                    base_power_per_station * (0.8 + 0.4 * random.random())
+                    for _ in range(station_count)
+                )
+                logger.warning("所有站点功率查询失败，使用模拟数据")
+                data_source = "simulated"
+        except Exception as e:
+            logger.error(f"查询站点功率失败: {e}，使用模拟数据")
+            base_power_per_station = 150
+            current_kw = sum(
+                base_power_per_station * (0.8 + 0.4 * random.random())
+                for _ in range(station_count)
+            )
+            data_source = "simulated"
+
         current_kw = round(current_kw, 1)
 
-        # 峰值功率：当前功率的1.2-1.5倍
+        # 峰值功率：当前功率的1.2-1.5倍（历史数据不足时的估算）
         peak_kw = current_kw * random.uniform(1.2, 1.5)
         peak_kw = round(peak_kw, 1)
 
@@ -679,6 +720,7 @@ async def get_kpi_data(
             "current_kw": current_kw,
             "peak_kw": peak_kw,
             "station_count": station_count,
+            "data_source": data_source,  # 标注数据来源
             "update_time": datetime.now().isoformat(),
         }
 

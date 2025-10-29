@@ -25,6 +25,36 @@
         </el-select>
       </div>
       
+      <div class="control-group slider-group">
+        <label>时间范围 (小时):</label>
+        <el-slider 
+          v-model="timeRangeHours" 
+          :min="1" 
+          :max="72" 
+          :step="1"
+          :show-tooltip="true"
+          :format-tooltip="formatTooltip"
+          @change="onTimeRangeChange"
+          class="time-range-slider"
+        />
+        <span class="slider-value">{{ timeRangeHours }}h</span>
+      </div>
+      
+      <div class="control-group slider-group">
+        <label>刷新间隔 (秒):</label>
+        <el-slider 
+          v-model="refreshInterval" 
+          :min="10" 
+          :max="300" 
+          :step="10"
+          :show-tooltip="true"
+          :format-tooltip="formatIntervalTooltip"
+          @change="onRefreshIntervalChange"
+          class="refresh-interval-slider"
+        />
+        <span class="slider-value">{{ refreshInterval }}s</span>
+      </div>
+      
       <div class="control-group">
         <el-button @click="refreshAll" type="primary" size="small">
           <i class="icon-refresh"></i>
@@ -164,7 +194,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch, onUnmounted } from 'vue'
-import { ElMessage, ElSelect, ElOption, ElButton } from 'element-plus'
+import { ElMessage, ElSelect, ElOption, ElButton, ElSlider } from 'element-plus'
 import { useToast } from '@/composables/useToast'
 import { useDataRefresh } from '@/composables/useDataRefresh'
 
@@ -175,6 +205,10 @@ const formatPercent = (val: number | string) => {
   const sign = num > 0 ? '+' : ''
   return `${sign}${num.toFixed(1)}`
 }
+
+// 滑动栏格式化函数
+const formatTooltip = (val: number) => `${val}小时`
+const formatIntervalTooltip = (val: number) => `${val}秒`
 
 import { 
   EnergyKpiCard, 
@@ -194,13 +228,15 @@ const lineConfigs = ref<LineConfigs>({})
 const selectedLine = ref<string>('')
 const selectedStation = ref<string>('')
 const trendPeriod = ref<string>('24h')
+const timeRangeHours = ref<number>(12)
+const refreshInterval = ref<number>(30)
 
 const kpi = ref<any>({})
 const realtimeData = ref<ChartData[]>([])
 const historyData = ref<ChartData[]>([])
 const classificationData = ref<ChartData[]>([])
 const compareData = ref<{ yoy_percent: number; mom_percent: number; current_kwh: number } | null>(null)
-let refreshTimer: NodeJS.Timeout | null = null
+let refreshTimer: ReturnType<typeof setInterval> | null = null
 
 const stationsOfSelectedLine = computed(() => {
   if (!selectedLine.value) return []
@@ -225,6 +261,14 @@ function onSuggestionImplemented(suggestion: any) {
 
 function onSuggestionViewed(suggestion: any) {
   console.log('查看建议:', suggestion)
+}
+
+function onTimeRangeChange() {
+  refreshRealtime()
+}
+
+function onRefreshIntervalChange() {
+  startAutoRefresh(true)
 }
 
 async function loadLineConfigs() {
@@ -252,33 +296,58 @@ function onLineChange() {
 
 async function refreshRealtime() {
   if (!selectedLine.value || !selectedStation.value) return
+  const hours = Math.max(1, Math.min(timeRangeHours.value, 72))
+
   try {
-    const data = await fetchRealtimeEnergy({ line: selectedLine.value, station_ip: selectedStation.value })
+    const data = await fetchRealtimeEnergy({
+      line: selectedLine.value,
+      station_ip: selectedStation.value,
+      hours
+    })
+
+    const chartSeries = (data?.series || []).map((s: any, idx: number) => ({
+      name: s.name,
+      type: 'line',
+      data: s.points,
+      smooth: true,
+      showSymbol: false,
+      lineStyle: {
+        width: 2,
+        opacity: 0.9
+      },
+      emphasis: {
+        focus: 'series'
+      },
+      color: s.color || undefined
+    }))
+
     realtimeData.value = [{
       type: 'line',
       title: '实时能耗',
-      data: data.series || [],
-      xAxis: data.timestamps || [],
-      series: (data.series || []).map((s: any) => ({ 
-        name: s.name, 
-        type: 'line', 
-        data: s.points,
-        smooth: true,
-        color: '#409EFF'
-      }))
+      data: chartSeries.length > 0 ? chartSeries[0]?.data ?? [] : [],
+      xAxis: data?.timestamps || [],
+      series: chartSeries
     }]
   } catch (error) {
     console.warn('实时数据获取失败，使用示例数据:', error)
+    const now = new Date()
+    const timestamps = Array.from({ length: hours }, (_, idx) => {
+      const date = new Date(now.getTime() - (hours - 1 - idx) * 60 * 60 * 1000)
+      return `${String(date.getHours()).padStart(2, '0')}:00`
+    })
+    const points = Array.from({ length: hours }, () => Math.round(100 + Math.random() * 50))
+
     realtimeData.value = [{
       type: 'line',
       title: '实时能耗',
-      data: Array.from({ length: 12 }, () => Math.round(100 + Math.random() * 50)),
-      xAxis: Array.from({ length: 12 }, (_, i) => `${i}:00`),
+      data: points,
+      xAxis: timestamps,
       series: [{
         name: '功率',
         type: 'line',
-        data: Array.from({ length: 12 }, () => Math.round(100 + Math.random() * 50)),
+        data: points,
         smooth: true,
+        showSymbol: false,
         color: '#409EFF'
       }]
     }]
@@ -379,10 +448,17 @@ function refreshAll() {
   refreshClassification()
 }
 
-function startAutoRefresh() {
+function startAutoRefresh(restart = false) {
+  if (refreshTimer) {
+    clearInterval(refreshTimer)
+  }
   refreshTimer = setInterval(() => {
     refreshRealtime()
-  }, 30000) // 30秒刷新一次实时数据
+  }, refreshInterval.value * 1000)
+
+  if (restart) {
+    refreshRealtime()
+  }
 }
 
 onMounted(async () => {
@@ -617,6 +693,49 @@ watch([selectedLine, selectedStation], () => {
   font-weight: var(--font-weight-medium);
   color: var(--color-text-primary);
   white-space: nowrap;
+}
+
+/* 滑动栏组样式 */
+.slider-group {
+  min-width: 240px;
+  flex: 1;
+}
+
+.slider-group .time-range-slider,
+.slider-group .refresh-interval-slider {
+  flex: 1;
+  margin: 0 var(--spacing-sm);
+}
+
+.slider-group .slider-value {
+  font-size: var(--font-size-sm);
+  color: rgba(0, 255, 204, 0.9);
+  font-weight: var(--font-weight-semibold);
+  min-width: 45px;
+  text-align: right;
+}
+
+/* 滑块样式定制 */
+.control-bar :deep(.el-slider__runway) {
+  background-color: rgba(14, 23, 51, 0.6);
+  border: 1px solid rgba(0, 212, 255, 0.25);
+}
+
+.control-bar :deep(.el-slider__bar) {
+  background: linear-gradient(90deg, rgba(0, 212, 255, 0.8) 0%, rgba(0, 255, 204, 0.8) 100%);
+}
+
+.control-bar :deep(.el-slider__button) {
+  border: 2px solid rgba(0, 255, 204, 0.9);
+  background: linear-gradient(135deg, rgba(0, 212, 255, 0.9) 0%, rgba(0, 255, 204, 0.9) 100%);
+  box-shadow: 0 0 8px rgba(0, 255, 204, 0.6);
+  width: 18px;
+  height: 18px;
+}
+
+.control-bar :deep(.el-slider__button:hover) {
+  box-shadow: 0 0 12px rgba(0, 255, 204, 0.8);
+  transform: scale(1.1);
 }
 
 .kpi-dashboard {
