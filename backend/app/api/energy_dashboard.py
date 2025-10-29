@@ -59,11 +59,12 @@ async def get_energy_overview(
 async def get_realtime_data(
     line: Optional[str] = Query(None, description="地铁线路，如M3、M8等"),
     station_ip: Optional[str] = Query(None, description="站点IP"),
+    hours: int = Query(12, description="时间范围（小时），1-72", ge=1, le=72),
     x_station_ip: Optional[str] = Header(None, alias="X-Station-Ip"),
 ):
     """
     获取实时能耗监控数据
-    支持按线路或站点过滤
+    支持按线路或站点过滤，支持自定义时间范围
     返回格式: { series: [{ name, points }], timestamps: [] }
     """
     try:
@@ -84,11 +85,11 @@ async def get_realtime_data(
         if not stations:
             return {"series": [], "timestamps": []}
 
-        # 生成最近12小时的时间戳
+        # 生成指定时间范围的时间戳
         now = datetime.now()
         timestamps = []
-        for i in range(12):
-            time_point = now - timedelta(hours=11 - i)
+        for i in range(hours):
+            time_point = now - timedelta(hours=hours - 1 - i)
             timestamps.append(time_point.strftime("%H:%M"))
 
         # 为每个站点生成一条曲线
@@ -97,9 +98,9 @@ async def get_realtime_data(
             # 生成功率数据点
             base_power = random.uniform(100, 200)
             points = []
-            for i in range(12):
+            for i in range(hours):
                 # 模拟功率波动
-                hour = (now - timedelta(hours=11 - i)).hour
+                hour = (now - timedelta(hours=hours - 1 - i)).hour
                 if 6 <= hour <= 22:  # 白天功率较高
                     power = base_power * random.uniform(0.8, 1.2)
                 else:  # 夜间功率较低
@@ -116,6 +117,7 @@ async def get_realtime_data(
         return {
             "series": series,
             "timestamps": timestamps,
+            "hours": hours,
             "update_time": datetime.now().isoformat(),
         }
 
