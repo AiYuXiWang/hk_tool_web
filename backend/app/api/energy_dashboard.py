@@ -60,6 +60,7 @@ async def get_realtime_data(
     line: Optional[str] = Query(None, description="地铁线路，如M3、M8等"),
     station_ip: Optional[str] = Query(None, description="站点IP"),
     x_station_ip: Optional[str] = Header(None, alias="X-Station-Ip"),
+    energy_service: EnergyService = Depends(get_energy_service),
 ):
     """
     获取实时能耗监控数据
@@ -70,52 +71,45 @@ async def get_realtime_data(
         # 确定站点IP
         target_station_ip = station_ip or x_station_ip
 
-        # 获取站点列表
-        stations = []
-        if target_station_ip:
-            station_config = electricity_config.get_station_by_ip(target_station_ip)
-            if station_config:
-                stations = [station_config]
-        elif line:
-            stations = electricity_config.get_stations_by_line(line)
-        else:
-            stations = electricity_config.get_all_stations()
+        # 使用 energy_service 获取实时数据
+        result = await energy_service.get_realtime_data(line, target_station_ip)
 
-        if not stations:
-            return {"series": [], "timestamps": []}
+        if not result.get("success"):
+            return {
+                "series": [],
+                "timestamps": [],
+                "update_time": datetime.now().isoformat(),
+            }
 
-        # 生成最近12小时的时间戳
-        now = datetime.now()
-        timestamps = []
-        for i in range(12):
-            time_point = now - timedelta(hours=11 - i)
-            timestamps.append(time_point.strftime("%H:%M"))
+        data = result.get("data", {})
+
+        # 转换数据格式以匹配前端期望的格式
+        station_data_list = data.get("data", [])
+        timestamps = data.get("timestamps", [])
+
+        # 只取前12个小时的数据
+        if len(timestamps) > 12:
+            timestamps = timestamps[-12:]
 
         # 为每个站点生成一条曲线
         series = []
-        for station in stations[:5]:  # 最多显示5个站点的曲线
-            # 生成功率数据点
-            base_power = random.uniform(100, 200)
-            points = []
-            for i in range(12):
-                # 模拟功率波动
-                hour = (now - timedelta(hours=11 - i)).hour
-                if 6 <= hour <= 22:  # 白天功率较高
-                    power = base_power * random.uniform(0.8, 1.2)
-                else:  # 夜间功率较低
-                    power = base_power * random.uniform(0.5, 0.8)
-                points.append(round(power, 1))
+        for station_data in station_data_list[:5]:  # 最多显示5个站点的曲线
+            hourly_data = station_data.get("hourly_data", [])
+
+            # 只取最近12小时的数据
+            if len(hourly_data) > 12:
+                hourly_data = hourly_data[-12:]
 
             series.append(
                 {
-                    "name": station.get("name", station.get("station", "未知站点")),
-                    "points": points,
+                    "name": station_data.get("station_name", "未知站点"),
+                    "points": hourly_data,
                 }
             )
 
         return {
             "series": series,
-            "timestamps": timestamps,
+            "timestamps": timestamps[-12:],  # 确保只返回12个时间戳
             "update_time": datetime.now().isoformat(),
         }
 
@@ -349,6 +343,11 @@ async def get_equipment_status(
     获取设备运行状态数据
     """
     try:
+        # 导入realtime_energy_service
+        from backend.app.services.realtime_energy_service import RealtimeEnergyService
+
+        realtime_service = RealtimeEnergyService()
+
         # 获取站点列表
         stations = []
         if x_station_ip:
@@ -363,16 +362,33 @@ async def get_equipment_status(
 
         for station in stations:
             try:
-                # 获取站点设备列表
-                devices = electricity_config.get_station_devices(station["ip"])
+                # 获取站点设备功率数据
+                device_powers = await realtime_service.get_station_device_powers(
+                    station
+                )
 
-                for device in devices[:3]:  # 每个站点显示前3个设备
-                    # 模拟设备状态
-                    status_rand = random.random()
-                    if status_rand > 0.9:
+                # 如果没有获取到真实数据，使用配置中的设备列表
+                if not device_powers:
+                    devices = electricity_config.get_station_devices(station["ip"])
+                    device_powers = [
+                        {
+                            "device_name": device.get("name", "未知设备"),
+                            "power": device.get("power", 100)
+                            * (0.8 + 0.4 * random.random()),
+                            "status": "online",
+                        }
+                        for device in devices[:3]
+                    ]
+
+                for device_data in device_powers[:3]:  # 每个站点显示前3个设备
+                    power = device_data.get("power", 0)
+                    device_status = device_data.get("status", "online")
+
+                    # 根据功率和状态判断设备状态
+                    if device_status == "offline" or power == 0:
                         status = "error"
-                        status_text = "设备故障"
-                    elif status_rand > 0.7:
+                        status_text = "设备离线"
+                    elif power < 50:  # 功率过低可能表示效率问题
                         status = "warning"
                         status_text = "效率偏低"
                     else:
@@ -381,14 +397,13 @@ async def get_equipment_status(
 
                     status_summary[status] += 1
 
-                    # 模拟设备功率和效率
-                    power = device.get("power", 100) * (0.8 + 0.4 * random.random())
-                    efficiency = 85 + 15 * random.random()
+                    # 计算效率（基于功率的估算）
+                    efficiency = min(100, 75 + (power / 10))
 
                     equipment_list.append(
                         {
-                            "id": f"{station['ip']}_{device['name']}",
-                            "name": device["name"],
+                            "id": f"{station['ip']}_{device_data['device_name']}",
+                            "name": device_data["device_name"],
                             "location": station["name"],
                             "power": round(power, 1),
                             "efficiency": round(efficiency, 1),
