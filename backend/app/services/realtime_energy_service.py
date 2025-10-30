@@ -1,52 +1,42 @@
 """
 真实能源数据服务
 从平台API获取实时能源数据
+参考export_service中的能耗数据获取方式，使用 /data/selectHisData 接口
 """
 
 import asyncio
 import logging
-from typing import Any, Dict, List, Optional
+from datetime import datetime
+from typing import Any, Dict, List, Optional, Tuple
 
 from backend.app.config.electricity_config import ElectricityConfig
 
 logger = logging.getLogger(__name__)
 
 try:  # noqa: SIM105
-    from control_service import PlatformAPIService  # type: ignore
-except Exception as exc:  # pragma: no cover - 环境缺失requests等依赖时的兼容处理
-    PlatformAPIService = None  # type: ignore
-    logging.getLogger(__name__).warning("PlatformAPIService 无法导入，能源数据将回退至估算模式: %s", exc)
+    import requests  # type: ignore
+except Exception as exc:  # pragma: no cover - 环境缺失requests依赖时的兼容处理
+    requests = None  # type: ignore
+    logging.getLogger(__name__).warning("requests模块无法导入，能源数据将回退至估算模式: %s", exc)
 
 
 class RealtimeEnergyService:
     """真实能源数据服务"""
 
-    def __init__(self):
-        self.platform_api = PlatformAPIService() if PlatformAPIService else None
+    def __init__(self) -> None:
         self.electricity_config = ElectricityConfig()
+        self.requests_available = requests is not None
 
-    def _get_station_query_pairs(self, station: Dict[str, Any]) -> List[tuple]:
-        """从站点配置提取(object_code, data_code)对"""
-        line_code = station.get("line")
-        station_name = station.get("name")
-        jieneng_config = self._get_jieneng_config(line_code, station_name)
-        if not jieneng_config:
-            logger.warning("站点 %s 没有节能数据配置", station_name)
-            return []
-        object_codes = jieneng_config.get("object_codes", [])
-        data_codes = jieneng_config.get("data_codes", [])
-        if not object_codes or not data_codes:
-            return []
-        if len(data_codes) == 1 and len(object_codes) == 1:
-            return [(object_codes[0], data_codes[0])]
-        return [(object_codes[0], data_codes[0])] if object_codes and data_codes else []
+    def _get_station_api_url(self, station_ip: str) -> str:
+        """构建站点API URL，参考export_service使用9898端口"""
+        return f"http://{station_ip}:9898"
 
     async def get_station_realtime_power(
         self, station: Dict[str, Any]
     ) -> Optional[float]:
         """获取单个站点的实时总功率"""
-        if not self.platform_api:
-            logger.debug("PlatformAPIService 不可用，跳过实时数据查询")
+        if not self.requests_available:
+            logger.debug("requests模块不可用，跳过实时数据查询")
             return None
 
         station_ip = station.get("ip")
@@ -54,60 +44,108 @@ class RealtimeEnergyService:
             logger.warning("站点 %s 没有IP配置", station.get("name"))
             return None
 
-        query_pairs = self._get_station_query_pairs(station)
-        if not query_pairs:
+        line_code = station.get("line")
+        station_name = station.get("name")
+        jieneng_config = self._get_jieneng_config(line_code, station_name)
+        if not jieneng_config:
+            logger.warning("站点 %s 没有节能数据配置", station_name)
             return None
 
+        object_codes = jieneng_config.get("object_codes", [])
+        data_codes = jieneng_config.get("data_codes", [])
+        if not object_codes or not data_codes:
+            logger.warning("站点 %s 缺少object_codes或data_codes", station_name)
+            return None
+
+        api_url = self._get_station_api_url(station_ip)
         try:
-            results = await asyncio.gather(
-                *(
-                    self._query_power_value(obj, data, station_ip)
-                    for obj, data in query_pairs
-                ),
-                return_exceptions=True,
-            )
-        except Exception as exc:  # pragma: no cover - gather内部异常
+            power = await self._query_recent_power(api_url, object_codes, data_codes)
+            if power is not None:
+                logger.info("站点 %s 实时功率: %.2f kW", station_name, power)
+            return power
+        except Exception as exc:  # pragma: no cover - 网络异常
             logger.error("获取站点 %s 实时功率失败: %s", station.get("name"), exc)
             return None
 
-        numeric_values = [value for value in results if isinstance(value, (int, float))]
-        if not numeric_values:
-            return None
-
-        return float(sum(numeric_values))
-
-    async def _query_power_value(
-        self, object_code: str, data_code: str, station_ip: str
+    async def _query_recent_power(
+        self, api_url: str, object_codes: List[str], data_codes: List[str]
     ) -> Optional[float]:
-        """查询单个点位的功率值"""
-        if not self.platform_api:
+        """查询最近10分钟的功率平均值"""
+        loop = asyncio.get_running_loop()
+        payload = self._build_select_payload(object_codes, data_codes)
+        data = await loop.run_in_executor(
+            None, self._fetch_select_his_data, api_url, payload
+        )
+        if not data:
             return None
+        return self._aggregate_power_from_data(data)
 
+    def _build_select_payload(
+        self, object_codes: List[str], data_codes: List[str]
+    ) -> Dict[str, Any]:
+        """构建selectHisData请求体"""
+        now = datetime.now()
+        end_timestamp = int(now.timestamp() * 1000)
+        start_timestamp = end_timestamp - 10 * 60_000  # 10分钟前
+
+        return {
+            "dataCodes": data_codes,
+            "endTime": end_timestamp,
+            "fill": "0",
+            "funcName": "mean",
+            "funcTime": "",
+            "measurement": "realData",
+            "objectCodes": object_codes,
+            "startTime": start_timestamp,
+        }
+
+    def _fetch_select_his_data(
+        self, api_url: str, payload: Dict[str, Any]
+    ) -> Optional[List[Dict[str, Any]]]:
+        """调用selectHisData接口并返回数据"""
         try:
-            result = await self.platform_api.query_realtime_value(
-                object_code, data_code, station_ip
+            response = requests.post(  # type: ignore[union-attr]
+                f"{api_url}/data/selectHisData",
+                json=payload,
+                timeout=5.0,
             )
-        except Exception as exc:  # pragma: no cover - 网络异常
-            logger.error("查询功率值失败 %s:%s: %s", object_code, data_code, exc)
+            if response.status_code != 200:
+                logger.error("API请求失败: %s, 状态码: %d", api_url, response.status_code)
+                return None
+            data = response.json().get("data", [])
+            if not data:
+                logger.warning("API返回空数据: %s", api_url)
+                return None
+            return data
+        except requests.Timeout:  # type: ignore[attr-defined]
+            logger.error("API请求超时: %s", api_url)
+            return None
+        except requests.ConnectionError:  # type: ignore[attr-defined]
+            logger.error("API连接失败: %s", api_url)
+            return None
+        except requests.RequestException as exc:  # type: ignore[attr-defined]
+            logger.error("API请求异常: %s, 错误: %s", api_url, exc)
+            return None
+        except Exception as exc:
+            logger.error("处理数据异常: %s", exc)
             return None
 
-        if not isinstance(result, dict):
-            return None
+    def _aggregate_power_from_data(self, data: List[Dict[str, Any]]) -> Optional[float]:
+        """计算数据中的功率总和"""
+        total_power = 0.0
+        valid_count = 0
 
-        return self._extract_numeric_value(result)
+        for item in data:
+            values = item.get("values", [])
+            if not values:
+                continue
+            parsed = self._safe_float(values[-1].get("value"))
+            if parsed is None:
+                continue
+            total_power += parsed
+            valid_count += 1
 
-    def _extract_numeric_value(self, payload: Dict[str, Any]) -> Optional[float]:
-        """从API返回中提取数值"""
-        raw_value: Any = payload.get("value")
-        if raw_value is None:
-            data = payload.get("data")
-            if isinstance(data, list) and data:
-                item = data[0]
-                if isinstance(item, dict):
-                    raw_value = item.get(
-                        "property_num_value", item.get("property_value")
-                    )
-        return self._safe_float(raw_value)
+        return total_power if valid_count > 0 else None
 
     def _safe_float(self, value: Any) -> Optional[float]:
         if value is None:
@@ -118,123 +156,118 @@ class RealtimeEnergyService:
             logger.warning("无法转换功率值: %s", value)
             return None
 
-    def _get_jieneng_config(self, line_code: str, station_name: str) -> Optional[Dict]:
+    def _get_jieneng_config(
+        self, line_code: str, station_name: str
+    ) -> Optional[Dict[str, Any]]:
         """从config_electricity.py获取站点的节能配置"""
         try:
             from config_electricity import line_configs
 
-            # 获取线路配置
             line_config = line_configs.get(line_code)
             if not line_config:
                 return None
 
-            # 获取站点配置
             station_config = line_config.get(station_name)
             if not station_config:
                 return None
 
-            # 返回节能配置
             return station_config.get("jienengfeijieneng")
 
-        except Exception as e:
-            logger.error(f"获取节能配置失败: {e}")
+        except Exception as exc:
+            logger.error("获取节能配置失败: %s", exc)
             return None
 
     async def get_multiple_stations_power(
         self, stations: List[Dict[str, Any]]
     ) -> Dict[str, Optional[float]]:
-        """
-        批量获取多个站点的实时功率
-        返回: {station_name: power_value}
-        """
-        tasks = []
-        station_names = []
-
-        for station in stations:
-            tasks.append(self.get_station_realtime_power(station))
-            station_names.append(station.get("name"))
+        """批量获取多个站点的实时功率"""
+        tasks = [self.get_station_realtime_power(station) for station in stations]
+        station_names = [station.get("name") for station in stations]
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        power_map = {}
+        power_map: Dict[str, Optional[float]] = {}
         for station_name, result in zip(station_names, results):
-            if isinstance(result, (int, float)):
-                power_map[station_name] = result
-            else:
-                power_map[station_name] = None
-
+            power_map[station_name] = (
+                result if isinstance(result, (int, float)) else None
+            )
         return power_map
+
+    def _resolve_station_config(
+        self, station: Dict[str, Any]
+    ) -> Optional[Tuple[str, List[str], List[str], List[Dict[str, Any]]]]:
+        """解析站点配置，返回 (api_url, object_codes, data_codes, data_list)"""
+        station_ip = station.get("ip")
+        line_code = station.get("line")
+        station_name = station.get("name")
+
+        if not station_ip:
+            return None
+
+        try:
+            from config_electricity import line_configs
+        except Exception as exc:  # pragma: no cover - 配置导入异常
+            logger.error("导入配置失败: %s", exc)
+            return None
+
+        line_config = line_configs.get(line_code)
+        if not line_config:
+            return None
+
+        station_config = line_config.get(station_name)
+        if not station_config:
+            return None
+
+        object_codes = station_config.get("object_codes", [])
+        data_codes = station_config.get("data_codes", [])
+        data_list = station_config.get("data_list", [])
+        if not object_codes or not data_codes:
+            return None
+
+        return (
+            self._get_station_api_url(station_ip),
+            object_codes,
+            data_codes,
+            data_list,
+        )
 
     async def get_station_device_powers(
         self, station: Dict[str, Any]
     ) -> List[Dict[str, Any]]:
-        """
-        获取站点所有设备的实时功率
-        从data_codes列表中逐个查询
-        """
-        try:
-            station_ip = station.get("ip")
-            line_code = station.get("line")
-            station_name = station.get("name")
-
-            if not station_ip:
-                return []
-
-            # 从config_electricity获取原始配置
-            from config_electricity import line_configs
-
-            line_config = line_configs.get(line_code)
-            if not line_config:
-                return []
-
-            station_config = line_config.get(station_name)
-            if not station_config:
-                return []
-
-            # 获取对象代码和数据代码列表
-            object_codes = station_config.get("object_codes", [])
-            data_codes = station_config.get("data_codes", [])
-            data_list = station_config.get("data_list", [])
-
-            if not object_codes or not data_codes:
-                return []
-
-            # 为每个数据代码创建查询任务
-            device_powers = []
-
-            # 限制查询数量，避免过多请求
-            max_queries = min(len(data_codes), 20)
-
-            for i, data_code in enumerate(data_codes[:max_queries]):
-                # 选择合适的对象代码（通常第一个是主对象）
-                object_code = object_codes[0] if object_codes else None
-
-                if not object_code:
-                    continue
-
-                # 获取对应的设备信息
-                device_name = f"设备{i+1}"
-                if i < len(data_list):
-                    device_info = data_list[i]
-                    device_name = device_info.get("p3", device_name)
-
-                # 查询功率值
-                power = await self._query_power_value(
-                    object_code, data_code, station_ip
-                )
-
-                device_powers.append(
-                    {
-                        "device_name": device_name,
-                        "data_code": data_code,
-                        "object_code": object_code,
-                        "power": power if power is not None else 0.0,
-                        "status": "online" if power is not None else "offline",
-                    }
-                )
-
-            return device_powers
-
-        except Exception as e:
-            logger.error(f"获取站点设备功率失败: {e}")
+        """获取站点所有设备的实时功率"""
+        if not self.requests_available:
             return []
+
+        resolved = self._resolve_station_config(station)
+        if not resolved:
+            return []
+
+        api_url, object_codes, data_codes, data_list = resolved
+        object_code = object_codes[0] if object_codes else None
+        if not object_code:
+            return []
+
+        max_queries = min(len(data_codes), 20)
+        device_powers: List[Dict[str, Any]] = []
+
+        for index, data_code in enumerate(data_codes[:max_queries]):
+            device_name = self._build_device_name(index, data_list)
+            power = await self._query_recent_power(api_url, [object_code], [data_code])
+            device_powers.append(
+                {
+                    "device_name": device_name,
+                    "data_code": data_code,
+                    "object_code": object_code,
+                    "power": power if power is not None else 0.0,
+                    "status": "online" if power is not None else "offline",
+                }
+            )
+
+        return device_powers
+
+    def _build_device_name(self, index: int, data_list: List[Dict[str, Any]]) -> str:
+        default_name = f"设备{index + 1}"
+        if index < len(data_list):
+            device_info = data_list[index]
+            return device_info.get("p3", default_name)
+        return default_name

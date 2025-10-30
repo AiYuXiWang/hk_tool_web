@@ -64,27 +64,50 @@ async def get_station_device_powers(station: Dict[str, Any]) -> List[Dict[str, A
 
 ### 平台API
 
-使用 `PlatformAPIService` 调用环控平台的实时数据接口：
+使用 `requests` 直接调用环控平台的历史数据接口（参考export_service）：
 
 ```
-POST http://{station_ip}:9801/api/objectPointInfo/selectObjectPointValueByDataCode
+POST http://{station_ip}:9898/data/selectHisData
 ```
 
 **请求参数**:
-- `object_code`: 对象代码（从配置中获取）
-- `data_code`: 数据代码（从配置中获取）
-- `token`: 认证令牌
+```json
+{
+  "dataCodes": ["data_code1", "data_code2"],
+  "objectCodes": ["object_code1", "object_code2"],
+  "startTime": 1234567890000,
+  "endTime": 1234567900000,
+  "fill": "0",
+  "funcName": "mean",
+  "funcTime": "",
+  "measurement": "realData"
+}
+```
 
 **响应格式**:
 ```json
 {
-  "code": 1,
-  "data": [{
-    "property_num_value": 123.45,
-    "property_value": "123.45"
-  }]
+  "data": [
+    {
+      "tags": {
+        "dataCode": "data_code1",
+        "objectCode": "object_code1"
+      },
+      "values": [
+        {
+          "time": "2025-01-15 10:00:00.000",
+          "value": 123.45
+        }
+      ]
+    }
+  ]
 }
 ```
+
+**实时功率查询方式**:
+- 查询最近10分钟的数据（startTime = endTime - 10 * 60000）
+- 使用 `funcName: "mean"` 获取平均值
+- 取返回数据中最后一个值作为最新功率值
 
 ### 配置文件
 
