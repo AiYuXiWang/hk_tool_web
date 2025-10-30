@@ -526,12 +526,18 @@ watch([selectedLine, selectedStation], () => {
 <style scoped>
 .energy-cockpit {
   position: relative;
-  padding: var(--spacing-layout-md);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
   background: 
     radial-gradient(ellipse 1200px 800px at 20% 0%, rgba(0, 212, 255, 0.12) 0%, transparent 50%),
     radial-gradient(ellipse 1000px 700px at 80% 100%, rgba(138, 43, 226, 0.08) 0%, transparent 50%),
     linear-gradient(135deg, #0a0e1a 0%, #0d1425 25%, #0e1733 50%, #0f1a3d 75%, #0d1429 100%);
   min-height: 100vh;
+  height: 100vh;
+  max-height: 100vh;
+  box-sizing: border-box;
   color: var(--color-text-primary);
   animation: fadeIn 0.4s ease-out;
   overflow: hidden;
@@ -542,7 +548,7 @@ watch([selectedLine, selectedStation], () => {
   /* Element Plus 输入/占位符文本令牌（局部） */
   --el-input-text-color: #ffffff;
   --el-input-placeholder-color: rgba(255,255,255,0.88);
-  --panel-radius: clamp(18px, 3vw, 28px);
+  --panel-radius: clamp(12px, 2vw, 16px);
 }
 
 /* 科技感背景动画 - 扫描线效果 */
@@ -624,9 +630,8 @@ watch([selectedLine, selectedStation], () => {
 .control-bar {
   position: relative;
   display: flex;
-  gap: var(--spacing-md);
-  margin-bottom: var(--spacing-md);
-  padding: var(--spacing-md);
+  gap: 10px;
+  padding: 10px 14px;
   background: 
     linear-gradient(135deg, rgba(14, 23, 51, 0.75) 0%, rgba(20, 32, 60, 0.65) 100%);
   backdrop-filter: blur(12px) saturate(180%);
@@ -638,6 +643,7 @@ watch([selectedLine, selectedStation], () => {
     0 0 20px rgba(0, 212, 255, 0.15);
   align-items: center;
   flex-wrap: wrap;
+  flex-shrink: 0;
   z-index: 10;
   /* 关键修复：让输入框背景透明，避免白底白字 */
   --el-input-bg-color: transparent;
@@ -744,10 +750,9 @@ watch([selectedLine, selectedStation], () => {
 .slider-control-panel {
   position: relative;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  gap: var(--spacing-md);
-  margin-bottom: var(--spacing-md);
-  padding: var(--spacing-lg);
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+  padding: 12px 14px;
   background: 
     linear-gradient(135deg, rgba(14, 23, 51, 0.75) 0%, rgba(20, 32, 60, 0.65) 100%);
   backdrop-filter: blur(12px) saturate(180%);
@@ -759,6 +764,7 @@ watch([selectedLine, selectedStation], () => {
     0 0 20px rgba(0, 212, 255, 0.15);
   z-index: 9;
   animation: slideUp 0.5s ease-out 0.15s both;
+  flex-shrink: 0;
 }
 
 .slider-control-panel::before {
@@ -880,15 +886,15 @@ watch([selectedLine, selectedStation], () => {
 .kpi-dashboard {
   position: relative;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: var(--spacing-md);
-  margin-bottom: var(--spacing-md);
-  padding: var(--spacing-sm);
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  padding: 8px;
   border-radius: var(--panel-radius);
   background: linear-gradient(135deg, rgba(12, 20, 42, 0.45) 0%, rgba(18, 40, 68, 0.35) 100%);
   backdrop-filter: blur(10px) saturate(160%);
   box-shadow: inset 0 0 0 1px rgba(0, 212, 255, 0.12);
   animation: slideUp 0.5s ease-out 0.1s both;
+  flex-shrink: 0;
 }
 
 .kpi-dashboard::before {
@@ -914,13 +920,16 @@ watch([selectedLine, selectedStation], () => {
 .chart-section {
   position: relative;
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--spacing-lg);
-  margin-bottom: var(--spacing-md);
-  padding: var(--spacing-sm);
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  grid-auto-rows: minmax(0, 1fr);
+  gap: 14px;
+  padding: 10px;
   border-radius: var(--panel-radius);
   background: linear-gradient(135deg, rgba(12, 20, 42, 0.45) 0%, rgba(18, 40, 68, 0.35) 100%);
   backdrop-filter: blur(10px) saturate(160%);
+  align-items: stretch;
+  flex: 1 1 0;
+  min-height: 0;
 }
 
 .chart-section::before {
@@ -934,6 +943,10 @@ watch([selectedLine, selectedStation], () => {
 
 .chart-container {
   position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
   background: 
     linear-gradient(135deg, rgba(14, 23, 51, 0.75) 0%, rgba(18, 28, 55, 0.65) 100%);
   backdrop-filter: blur(16px) saturate(180%);
@@ -968,6 +981,16 @@ watch([selectedLine, selectedStation], () => {
 .device-monitor :deep(.card-body),
 .optimization-panel :deep(.card-body) {
   background: transparent;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+
+.chart-container :deep(.card-body > *),
+.device-monitor :deep(.card-body > *),
+.optimization-panel :deep(.card-body > *) {
+  min-height: 0;
 }
 
 .chart-container :deep(.card-footer),
@@ -1012,11 +1035,13 @@ watch([selectedLine, selectedStation], () => {
   position: relative;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: var(--spacing-lg);
-  padding: var(--spacing-sm);
+  gap: 14px;
+  padding: 10px;
   border-radius: var(--panel-radius);
   background: linear-gradient(135deg, rgba(12, 20, 42, 0.45) 0%, rgba(18, 40, 68, 0.35) 100%);
   backdrop-filter: blur(10px) saturate(160%);
+  flex: 1 1 0;
+  min-height: 0;
 }
 
 .bottom-section::before {
