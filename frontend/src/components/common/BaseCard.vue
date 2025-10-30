@@ -1,14 +1,15 @@
 <template>
   <div :class="cardClasses">
     <!-- 卡片头部 -->
-    <div v-if="$slots.header || title || $slots.extra" class="card-header">
+    <div v-if="$slots.header || title || $slots.extra || $slots['header-extra']" class="card-header">
       <div class="card-header-content">
         <slot name="header">
           <h3 v-if="title" class="card-title">{{ title }}</h3>
         </slot>
       </div>
-      <div v-if="$slots.extra" class="card-extra">
+      <div v-if="$slots.extra || $slots['header-extra']" class="card-extra">
         <slot name="extra" />
+        <slot name="header-extra" />
       </div>
     </div>
     
