@@ -308,8 +308,8 @@ const timeRangeShortcuts = [
 
 const DATA_SOURCE_PRIORITY = {
   real: 3,
-  mixed: 2,
-  simulated: 1,
+  partial: 2,
+  unavailable: 1,
 } as const
 
 type DataSourceType = keyof typeof DATA_SOURCE_PRIORITY
@@ -343,8 +343,8 @@ const dataSourceText = computed(() => {
   if (!dataSource.value) return ''
   const texts: Record<DataSourceType, string> = {
     real: '真实数据',
-    simulated: '模拟数据',
-    mixed: '混合数据',
+    partial: '部分数据缺失',
+    unavailable: '数据不可用',
   }
   return texts[dataSource.value]
 })
@@ -455,7 +455,7 @@ async function refreshRealtime() {
       ...timeParams
     })
 
-    const source = typeof data?.data_source === 'string' && ['real', 'simulated', 'mixed'].includes(data.data_source)
+    const source = typeof data?.data_source === 'string' && ['real', 'partial', 'unavailable'].includes(data.data_source)
       ? (data.data_source as DataSourceType)
       : ''
     updateDataSource(source)
@@ -495,7 +495,7 @@ async function refreshRealtime() {
         color: '#409EFF'
       }]
     }]
-    updateDataSource('simulated')
+    updateDataSource('unavailable')
   } finally {
     realtimeLoading.value = false
     if (!isRefreshing.value) {
@@ -824,23 +824,23 @@ watch([selectedLine, selectedStation], () => {
   background: #34d399;
 }
 
-.data-source-indicator.data-source-mixed {
+.data-source-indicator.data-source-partial {
   background: rgba(250, 204, 21, 0.16);
   color: #ffe27f;
   box-shadow: 0 0 16px rgba(250, 204, 21, 0.3);
 }
 
-.data-source-indicator.data-source-mixed .indicator-dot {
+.data-source-indicator.data-source-partial .indicator-dot {
   background: #facc15;
 }
 
-.data-source-indicator.data-source-simulated {
+.data-source-indicator.data-source-unavailable {
   background: rgba(248, 113, 113, 0.16);
   color: #ffc1b5;
   box-shadow: 0 0 16px rgba(248, 113, 113, 0.3);
 }
 
-.data-source-indicator.data-source-simulated .indicator-dot {
+.data-source-indicator.data-source-unavailable .indicator-dot {
   background: #f87171;
 }
 

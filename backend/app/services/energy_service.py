@@ -194,27 +194,46 @@ class EnergyService(CacheableService):
         self, station: Dict[str, Any]
     ) -> Dict[str, Any]:
         """获取单个站点的总览数据"""
+        station_name = station.get("name", "未知站点")
+
         try:
             # 获取设备列表
             devices = self.electricity_config.get_station_devices(station["ip"])
             device_count = len(devices)
 
-            # 尝试从平台API获取实时功率
+            self.logger.info("📊 [%s] 开始获取总览数据 - 设备数量: %d", station_name, device_count)
+
+            # 从平台API获取实时功率（取消模拟数据fallback）
             current_power = await self.realtime_service.get_station_realtime_power(
                 station
             )
 
-            is_real_data = current_power is not None
+            data_source = "real"
+            error_detail: Optional[str] = None
 
-            # 如果获取失败，使用估算值
+            # 如果获取失败，记录详细错误并返回0
             if current_power is None:
-                self.logger.warning(f"站点 {station['name']} 实时功率获取失败，使用模拟数据")
-                base_power = device_count * 25 + random.uniform(-10, 10)
-                current_power = max(0, base_power + random.uniform(-15, 15))
+                error_detail = (
+                    "实时功率获取失败。请检查: " "1) 站点节能数据配置是否正确 " "2) 站点API是否可访问 " "3) 时间范围内是否有数据"
+                )
+                self.logger.error("❌ [%s] %s", station_name, error_detail)
+                current_power = 0.0
+                data_source = "unavailable"
 
-            # 计算日能耗（基于当前功率的估算）
-            # 假设设备平均运行20小时/天，功率波动系数0.8-1.2
-            daily_consumption = current_power * 20 * random.uniform(0.8, 1.2)
+            # 计算日能耗（基于当前功率的估算，不再叠加随机因素）
+            daily_consumption = current_power * 20  # 假设平均运行20小时/天
+
+            if data_source == "real":
+                self.logger.info(
+                    "✅ [%s] 总览数据获取成功 - 当前功率: %.2f kW, 日能耗: %.2f kWh",
+                    station_name,
+                    current_power,
+                    daily_consumption,
+                )
+            else:
+                self.logger.warning(
+                    "⚠️ [%s] 返回默认总览数据 - 当前功率: 0 kW, 日能耗: 0 kWh", station_name
+                )
 
             return {
                 "station_ip": station["ip"],
@@ -222,48 +241,64 @@ class EnergyService(CacheableService):
                 "current_power": current_power,
                 "daily_consumption": daily_consumption,
                 "device_count": device_count,
-                "data_source": "real" if is_real_data else "simulated",
+                "data_source": data_source,
+                "error": error_detail,
             }
 
         except Exception as e:
-            self.logger.warning(f"获取站点 {station['ip']} 总览数据失败: {e}")
+            self.logger.error(
+                "❌ [%s] 获取总览数据失败: %s (类型: %s)", station_name, str(e), type(e).__name__
+            )
             raise
 
     async def _get_station_realtime_data(
         self, station: Dict[str, Any]
     ) -> Dict[str, Any]:
         """获取单个站点的实时数据"""
+        station_name = station.get("name", "未知站点")
+
         try:
             devices = self.electricity_config.get_station_devices(station["ip"])
             device_count = len(devices)
 
-            # 尝试从平台API获取实时功率
+            self.logger.info("📈 [%s] 开始获取实时数据 - 设备数量: %d", station_name, device_count)
+
+            # 从平台API获取实时功率（取消模拟数据fallback）
             current_power = await self.realtime_service.get_station_realtime_power(
                 station
             )
 
-            # 记录数据来源
-            is_real_data = current_power is not None
+            data_source = "real"
+            error_detail: Optional[str] = None
 
-            # 如果获取失败，使用估算值
             if current_power is None:
-                self.logger.warning(f"站点 {station['name']} 实时功率获取失败，使用模拟数据")
-                base_power = device_count * 25 + random.uniform(-10, 10)
-                current_power = max(0, base_power + random.uniform(-15, 15))
-            else:
-                base_power = current_power
+                error_detail = "实时功率获取失败。请检查: " "1) 节能数据配置 2) 站点API可达性 3) 是否存在实时数据"
+                self.logger.error("❌ [%s] %s", station_name, error_detail)
+                current_power = 0.0
+                data_source = "unavailable"
 
             # 生成24小时功率曲线（基于当前功率估算历史曲线）
-            hourly_data = []
+            hourly_data: List[float] = []
             now = datetime.now()
 
-            for i in range(24):
-                hour = (now - timedelta(hours=23 - i)).hour
-                if 6 <= hour <= 22:  # 白天功率较高
-                    power = base_power * (0.8 + 0.4 * (1 + 0.1 * (i % 3)))
-                else:  # 夜间功率较低
-                    power = base_power * (0.5 + 0.3 * (1 + 0.1 * (i % 2)))
-                hourly_data.append(round(max(0, power), 1))
+            if data_source == "real":
+                base_power = current_power
+                for i in range(24):
+                    hour = (now - timedelta(hours=23 - i)).hour
+                    if 6 <= hour <= 22:  # 白天功率较高
+                        power = base_power * (0.8 + 0.4 * (1 + 0.1 * (i % 3)))
+                    else:  # 夜间功率较低
+                        power = base_power * (0.5 + 0.3 * (1 + 0.1 * (i % 2)))
+                    hourly_data.append(round(max(0, power), 1))
+            else:
+                hourly_data = [0.0 for _ in range(24)]
+
+            if data_source == "real":
+                self.logger.info(
+                    "✅ [%s] 实时数据获取成功 - 当前功率: %.2f kW", station_name, current_power
+                )
+            else:
+                self.logger.warning("⚠️ [%s] 返回默认实时数据 - 当前功率: 0 kW", station_name)
 
             return {
                 "station_name": station["name"],
@@ -271,11 +306,14 @@ class EnergyService(CacheableService):
                 "current_power": round(current_power, 1),
                 "device_count": device_count,
                 "hourly_data": hourly_data,
-                "data_source": "real" if is_real_data else "simulated",
+                "data_source": data_source,
+                "error": error_detail,
             }
 
         except Exception as e:
-            self.logger.warning(f"获取站点 {station['ip']} 实时数据失败: {e}")
+            self.logger.error(
+                "❌ [%s] 获取实时数据失败: %s (类型: %s)", station_name, str(e), type(e).__name__
+            )
             raise
 
     async def _calculate_overview_metrics(
@@ -285,22 +323,23 @@ class EnergyService(CacheableService):
         total_consumption = sum(data["daily_consumption"] for data in station_data_list)
         current_power = sum(data["current_power"] for data in station_data_list)
 
-        # 判断整体数据来源
-        has_real_data = any(
-            item.get("data_source") == "real" for item in station_data_list
+        real_station_count = sum(
+            1 for data in station_data_list if data.get("data_source") == "real"
         )
-        all_real_data = all(
-            item.get("data_source") == "real" for item in station_data_list
-        )
+        unavailable_stations = [
+            data
+            for data in station_data_list
+            if data.get("data_source") == "unavailable"
+        ]
 
-        if all_real_data:
-            data_source = "real"
-        elif has_real_data:
-            data_source = "mixed"
+        if real_station_count == 0:
+            data_source = "unavailable"
+        elif unavailable_stations:
+            data_source = "partial"
         else:
-            data_source = "simulated"
+            data_source = "real"
 
-        # 计算趋势数据（模拟）
+        # 计算趋势数据（估算）
         yesterday_consumption = total_consumption * 0.95
         last_hour_power = current_power * 1.02
 
@@ -311,6 +350,20 @@ class EnergyService(CacheableService):
         baseline_consumption = total_consumption * 1.15
         energy_saved = baseline_consumption - total_consumption
         cost_saving = energy_saved * 1.5  # 按1.5元/kWh计算
+
+        self.logger.info(
+            "📊 总览指标计算完成 - 总能耗: %.1f kWh, 当前功率: %.1f kW, 可用站点: %d/%d",
+            total_consumption,
+            current_power,
+            real_station_count,
+            total_stations,
+        )
+
+        if unavailable_stations:
+            self.logger.warning(
+                "⚠️ 以下站点总览数据不可用: %s",
+                ", ".join(item["station_name"] for item in unavailable_stations),
+            )
 
         return {
             "total_consumption": round(total_consumption, 1),
@@ -343,8 +396,17 @@ class EnergyService(CacheableService):
                 "efficiency_trend": {"direction": "positive", "percentage": 3.5},
             },
             "station_count": total_stations,
+            "available_station_count": real_station_count,
             "update_time": datetime.now().isoformat(),
             "data_source": data_source,
+            "unavailable_stations": [
+                {
+                    "station_name": item["station_name"],
+                    "station_ip": item["station_ip"],
+                    "reason": item.get("error"),
+                }
+                for item in unavailable_stations
+            ],
         }
 
     async def _generate_realtime_response(
@@ -352,29 +414,31 @@ class EnergyService(CacheableService):
     ) -> Dict[str, Any]:
         """生成实时监控响应数据"""
         if not station_data_list:
+            self.logger.error("❌ 实时数据汇总失败: 所有站点实时功率获取失败，请检查配置或网络状态")
             return {
                 "data": [],
                 "timestamps": [],
                 "total_power": 0,
                 "chart_data": [],
                 "station_comparison": [],
-                "data_source": "simulated",
+                "data_source": "unavailable",
             }
 
-        # 判断整体数据来源：如果任何一个站点是真实数据，则标记为real
-        has_real_data = any(
-            item.get("data_source") == "real" for item in station_data_list
+        real_station_count = sum(
+            1 for item in station_data_list if item.get("data_source") == "real"
         )
-        all_real_data = all(
-            item.get("data_source") == "real" for item in station_data_list
-        )
+        unavailable_stations = [
+            item
+            for item in station_data_list
+            if item.get("data_source") == "unavailable"
+        ]
 
-        if all_real_data:
-            data_source = "real"
-        elif has_real_data:
-            data_source = "mixed"
+        if real_station_count == 0:
+            data_source = "unavailable"
+        elif unavailable_stations:
+            data_source = "partial"
         else:
-            data_source = "simulated"
+            data_source = "real"
 
         # 生成时间戳
         now = datetime.now()
@@ -413,7 +477,21 @@ class EnergyService(CacheableService):
                         item["current_power"] * 0.8 + random.uniform(-5, 5), 1
                     ),
                     "device_count": item["device_count"],
+                    "data_source": item.get("data_source", "unknown"),
                 }
+            )
+
+        self.logger.info(
+            "📈 实时数据汇总完成 - 总功率: %.1f kW, 可用站点: %d/%d",
+            total_current_power,
+            real_station_count,
+            len(station_data_list),
+        )
+
+        if unavailable_stations:
+            self.logger.warning(
+                "⚠️ 以下站点实时数据不可用: %s",
+                ", ".join(item["station_name"] for item in unavailable_stations),
             )
 
         return {
@@ -423,6 +501,15 @@ class EnergyService(CacheableService):
             "chart_data": chart_data,
             "station_comparison": station_comparison,
             "data_source": data_source,
+            "available_station_count": real_station_count,
+            "unavailable_stations": [
+                {
+                    "station_name": item["station_name"],
+                    "station_ip": item["station_ip"],
+                    "reason": item.get("error"),
+                }
+                for item in unavailable_stations
+            ],
         }
 
     async def _generate_historical_trends(
