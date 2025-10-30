@@ -33,6 +33,57 @@
       </div>
     </div>
 
+    <!-- 滑动栏控制区域 -->
+    <div class="slider-control-panel">
+      <div class="slider-group">
+        <div class="slider-header">
+          <label>时间范围: {{ timeRangeHours }}小时</label>
+          <span class="slider-value">{{ timeRangeHours }}h</span>
+        </div>
+        <el-slider 
+          v-model="timeRangeHours" 
+          :min="1" 
+          :max="72" 
+          :step="1"
+          :show-tooltip="true"
+          :format-tooltip="formatTimeTooltip"
+          @change="onTimeRangeChange"
+        />
+      </div>
+
+      <div class="slider-group">
+        <div class="slider-header">
+          <label>刷新间隔: {{ refreshIntervalSeconds }}秒</label>
+          <span class="slider-value">{{ refreshIntervalSeconds }}s</span>
+        </div>
+        <el-slider 
+          v-model="refreshIntervalSeconds" 
+          :min="10" 
+          :max="300" 
+          :step="10"
+          :show-tooltip="true"
+          :format-tooltip="formatIntervalTooltip"
+          @change="onRefreshIntervalChange"
+        />
+      </div>
+
+      <div class="slider-group">
+        <div class="slider-header">
+          <label>功率阈值: {{ powerThreshold }} W</label>
+          <span class="slider-value">{{ powerThreshold }} W</span>
+        </div>
+        <el-slider 
+          v-model="powerThreshold" 
+          :min="0" 
+          :max="5000" 
+          :step="100"
+          :show-tooltip="true"
+          :format-tooltip="formatPowerTooltip"
+          @change="onPowerThresholdChange"
+        />
+      </div>
+    </div>
+
     <!-- KPI看板 -->
     <div class="kpi-dashboard">
       <EnergyKpiCard
@@ -143,8 +194,8 @@
     <div class="bottom-section">
       <EnergyDeviceMonitor
         title="设备监控"
-        :auto-refresh="true"
-        :refresh-interval="10000"
+        :auto-refresh-interval="refreshIntervalSeconds * 1000"
+        :power-threshold="powerThreshold"
         @device-selected="onDeviceSelected"
         @device-controlled="onDeviceControlled"
         class="device-monitor"
@@ -164,9 +215,8 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch, onUnmounted } from 'vue'
-import { ElMessage, ElSelect, ElOption, ElButton } from 'element-plus'
+import { ElMessage, ElSelect, ElOption, ElButton, ElSlider } from 'element-plus'
 import { useToast } from '@/composables/useToast'
-import { useDataRefresh } from '@/composables/useDataRefresh'
 
 // 百分比显示格式化：正数加+号，保留1位小数
 const formatPercent = (val: number | string) => {
@@ -195,6 +245,11 @@ const selectedLine = ref<string>('')
 const selectedStation = ref<string>('')
 const trendPeriod = ref<string>('24h')
 
+// 滑动栏状态
+const timeRangeHours = ref<number>(24)
+const refreshIntervalSeconds = ref<number>(30)
+const powerThreshold = ref<number>(0)
+
 const kpi = ref<any>({})
 const realtimeData = ref<ChartData[]>([])
 const historyData = ref<ChartData[]>([])
@@ -206,6 +261,59 @@ const stationsOfSelectedLine = computed(() => {
   if (!selectedLine.value) return []
   return lineConfigs.value[selectedLine.value] || []
 })
+
+// 滑动栏工具提示格式化
+const formatTimeTooltip = (value: number) => {
+  if (value < 24) {
+    return `${value} 小时`
+  } else if (value === 24) {
+    return '1 天'
+  } else {
+    const days = Math.floor(value / 24)
+    const hours = value % 24
+    return hours > 0 ? `${days} 天 ${hours} 小时` : `${days} 天`
+  }
+}
+
+const formatIntervalTooltip = (value: number) => {
+  if (value < 60) {
+    return `${value} 秒`
+  } else {
+    const minutes = Math.floor(value / 60)
+    const seconds = value % 60
+    return seconds > 0 ? `${minutes} 分 ${seconds} 秒` : `${minutes} 分钟`
+  }
+}
+
+const formatPowerTooltip = (value: number) => {
+  return `≥ ${value} W`
+}
+
+// 滑动栏变化处理
+const onTimeRangeChange = (value: number) => {
+  console.log('时间范围变化:', value, '小时')
+  toast.info(`时间范围已调整为 ${formatTimeTooltip(value)}`)
+  // 重新加载数据
+  refreshRealtime()
+  refreshTrend()
+}
+
+const onRefreshIntervalChange = (value: number) => {
+  console.log('刷新间隔变化:', value, '秒')
+  toast.info(`刷新间隔已调整为 ${formatIntervalTooltip(value)}`)
+  // 重启自动刷新
+  if (refreshTimer) {
+    clearInterval(refreshTimer)
+    refreshTimer = null
+  }
+  startAutoRefresh()
+}
+
+const onPowerThresholdChange = (value: number) => {
+  console.log('功率阈值变化:', value, 'W')
+  toast.info(`功率阈值已设置为 ${value} W，设备列表已自动筛选`)
+  // 功率阈值会通过 powerThreshold prop 传递给 EnergyDeviceMonitor 组件进行筛选
+}
 
 function exportHistoryData() {
   console.log('导出历史数据')
@@ -253,31 +361,41 @@ function onLineChange() {
 async function refreshRealtime() {
   if (!selectedLine.value || !selectedStation.value) return
   try {
-    const data = await fetchRealtimeEnergy({ line: selectedLine.value, station_ip: selectedStation.value })
+    const data = await fetchRealtimeEnergy({ 
+      line: selectedLine.value, 
+      station_ip: selectedStation.value,
+      hours: timeRangeHours.value
+    })
+    const timestamps: string[] = data.timestamps || []
+    const seriesData = data.series || []
+    const dataPoints = Math.min(timeRangeHours.value, timestamps.length || timeRangeHours.value)
+    const clippedTimestamps = timestamps.slice(-dataPoints)
+
     realtimeData.value = [{
       type: 'line',
       title: '实时能耗',
-      data: data.series || [],
-      xAxis: data.timestamps || [],
-      series: (data.series || []).map((s: any) => ({ 
+      data: seriesData,
+      xAxis: clippedTimestamps,
+      series: seriesData.map((s: any) => ({ 
         name: s.name, 
         type: 'line', 
-        data: s.points,
+        data: (s.points || []).slice(-(dataPoints)),
         smooth: true,
         color: '#409EFF'
       }))
     }]
   } catch (error) {
     console.warn('实时数据获取失败，使用示例数据:', error)
+    const dataPoints = Math.min(timeRangeHours.value, 24)
     realtimeData.value = [{
       type: 'line',
       title: '实时能耗',
-      data: Array.from({ length: 12 }, () => Math.round(100 + Math.random() * 50)),
-      xAxis: Array.from({ length: 12 }, (_, i) => `${i}:00`),
+      data: Array.from({ length: dataPoints }, () => Math.round(100 + Math.random() * 50)),
+      xAxis: Array.from({ length: dataPoints }, (_, i) => `${i}:00`),
       series: [{
         name: '功率',
         type: 'line',
-        data: Array.from({ length: 12 }, () => Math.round(100 + Math.random() * 50)),
+        data: Array.from({ length: dataPoints }, () => Math.round(100 + Math.random() * 50)),
         smooth: true,
         color: '#409EFF'
       }]
@@ -380,9 +498,12 @@ function refreshAll() {
 }
 
 function startAutoRefresh() {
+  if (refreshTimer) {
+    clearInterval(refreshTimer)
+  }
   refreshTimer = setInterval(() => {
     refreshRealtime()
-  }, 30000) // 30秒刷新一次实时数据
+  }, refreshIntervalSeconds.value * 1000) // 使用滑动栏设置的刷新间隔
 }
 
 onMounted(async () => {
@@ -619,6 +740,143 @@ watch([selectedLine, selectedStation], () => {
   white-space: nowrap;
 }
 
+/* 滑动栏控制面板样式 */
+.slider-control-panel {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
+  padding: var(--spacing-lg);
+  background: 
+    linear-gradient(135deg, rgba(14, 23, 51, 0.75) 0%, rgba(20, 32, 60, 0.65) 100%);
+  backdrop-filter: blur(12px) saturate(180%);
+  border-radius: var(--border-radius-lg);
+  border: 1px solid rgba(0, 212, 255, 0.35);
+  box-shadow: 
+    0 8px 32px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 0 20px rgba(0, 212, 255, 0.15);
+  z-index: 9;
+  animation: slideUp 0.5s ease-out 0.15s both;
+}
+
+.slider-control-panel::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, 
+    transparent 0%, 
+    rgba(138, 43, 226, 0.6) 25%, 
+    rgba(0, 255, 204, 0.8) 50%, 
+    rgba(138, 43, 226, 0.6) 75%, 
+    transparent 100%);
+  border-radius: var(--border-radius-lg) var(--border-radius-lg) 0 0;
+  opacity: 0.8;
+  animation: glowPulse 4s ease-in-out infinite;
+}
+
+.slider-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm);
+  background: linear-gradient(135deg, rgba(10, 18, 35, 0.5) 0%, rgba(15, 25, 45, 0.4) 100%);
+  border-radius: var(--border-radius-md);
+  border: 1px solid rgba(0, 212, 255, 0.2);
+  transition: all 0.3s ease;
+}
+
+.slider-group:hover {
+  border-color: rgba(0, 255, 204, 0.5);
+  box-shadow: 0 0 16px rgba(0, 212, 255, 0.2);
+  transform: translateY(-2px);
+}
+
+.slider-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--spacing-xs);
+}
+
+.slider-header label {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
+  letter-spacing: 0.05em;
+}
+
+.slider-value {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+  color: rgba(0, 255, 204, 0.95);
+  text-shadow: 0 0 12px rgba(0, 255, 204, 0.6);
+  font-family: 'Courier New', monospace;
+}
+
+/* Element Plus Slider 自定义样式 */
+.slider-group :deep(.el-slider__runway) {
+  background-color: rgba(0, 212, 255, 0.15);
+  height: 8px;
+  border-radius: 4px;
+}
+
+.slider-group :deep(.el-slider__bar) {
+  background: linear-gradient(90deg, 
+    rgba(0, 212, 255, 0.8) 0%, 
+    rgba(0, 255, 204, 0.9) 100%);
+  height: 8px;
+  border-radius: 4px;
+  box-shadow: 0 0 12px rgba(0, 212, 255, 0.5);
+}
+
+.slider-group :deep(.el-slider__button) {
+  width: 20px;
+  height: 20px;
+  border: 3px solid rgba(0, 255, 204, 0.9);
+  background: linear-gradient(135deg, 
+    rgba(14, 23, 51, 0.95) 0%, 
+    rgba(18, 32, 58, 0.9) 100%);
+  box-shadow: 
+    0 0 16px rgba(0, 255, 204, 0.6),
+    0 4px 12px rgba(0, 0, 0, 0.3);
+  transition: all 0.3s ease;
+}
+
+.slider-group :deep(.el-slider__button:hover) {
+  transform: scale(1.2);
+  box-shadow: 
+    0 0 24px rgba(0, 255, 204, 0.8),
+    0 6px 16px rgba(0, 0, 0, 0.4);
+}
+
+.slider-group :deep(.el-slider__button-wrapper) {
+  top: -6px;
+}
+
+.slider-group :deep(.el-slider__button-wrapper:hover .el-slider__button),
+.slider-group :deep(.el-slider__button-wrapper.hover .el-slider__button),
+.slider-group :deep(.el-slider__button-wrapper.dragging .el-slider__button) {
+  transform: scale(1.3);
+  border-color: rgba(0, 255, 204, 1);
+}
+
+/* Tooltip 样式 */
+.slider-group :deep(.el-tooltip__popper) {
+  background: linear-gradient(135deg, 
+    rgba(14, 23, 51, 0.95) 0%, 
+    rgba(18, 32, 58, 0.9) 100%);
+  border: 1px solid rgba(0, 212, 255, 0.5);
+  color: rgba(255, 255, 255, 0.95);
+  font-weight: 600;
+  padding: 8px 12px;
+  box-shadow: 0 8px 24px rgba(0, 212, 255, 0.3);
+}
+
 .kpi-dashboard {
   position: relative;
   display: grid;
@@ -845,6 +1103,12 @@ watch([selectedLine, selectedStation], () => {
   .control-group {
     min-width: auto;
     justify-content: space-between;
+  }
+
+  .slider-control-panel {
+    grid-template-columns: 1fr;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-md);
   }
   
   .kpi-dashboard {

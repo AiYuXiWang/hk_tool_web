@@ -87,13 +87,15 @@ interface Props {
   shadow?: 'none' | 'sm' | 'md' | 'lg' | 'xl'
   hover?: boolean
   autoRefreshInterval?: number
+  powerThreshold?: number
 }
 
 const props = withDefaults(defineProps<Props>(), {
   title: '设备监控',
   shadow: 'md',
   hover: true,
-  autoRefreshInterval: 30000
+  autoRefreshInterval: 30000,
+  powerThreshold: 0
 })
 
 // Emits
@@ -112,12 +114,17 @@ const devices = ref<any[]>([])
 const refreshTimer = ref<NodeJS.Timeout | null>(null)
 
 // 计算属性
-const totalDevices = computed(() => devices.value.length)
-const onlineDevices = computed(() => devices.value.filter(d => d.status === 'online').length)
-const offlineDevices = computed(() => devices.value.filter(d => d.status === 'offline').length)
-const warningDevices = computed(() => devices.value.filter(d => d.status === 'warning').length)
+const filteredDevices = computed(() => {
+  const threshold = props.powerThreshold ?? 0
+  if (!threshold) return devices.value
+  return devices.value.filter(d => (d.power ?? 0) >= threshold)
+})
 
-const filteredDevices = computed(() => devices.value)
+const totalDevices = computed(() => filteredDevices.value.length)
+const onlineDevices = computed(() => filteredDevices.value.filter(d => d.status === 'online').length)
+const offlineDevices = computed(() => filteredDevices.value.filter(d => d.status === 'offline').length)
+const warningDevices = computed(() => filteredDevices.value.filter(d => d.status === 'warning').length)
+
 
 // 表格列定义
 const deviceColumns = [

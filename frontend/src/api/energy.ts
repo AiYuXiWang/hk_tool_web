@@ -1,6 +1,6 @@
 import { http, unwrap } from './control'
 
-export async function fetchRealtimeEnergy(params: { line: string; station_ip?: string }) {
+export async function fetchRealtimeEnergy(params: { line: string; station_ip?: string; hours?: number }) {
   const { data } = await http.get('/api/energy/realtime', { params })
   return unwrap(data)
 }
