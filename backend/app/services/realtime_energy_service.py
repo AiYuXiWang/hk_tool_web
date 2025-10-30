@@ -280,7 +280,11 @@ class RealtimeEnergyService:
     def _get_jieneng_config(
         self, line_code: str, station_name: str
     ) -> Optional[Dict[str, Any]]:
-        """从config_electricity.py获取站点的节能配置"""
+        """从config_electricity.py获取站点的节能配置
+        
+        注意：这里应该使用data_codes和object_codes数组来获取所有设备的能耗数据，
+        而不是jienengfeijieneng节点（该节点仅用于获取节能状态）
+        """
         try:
             from config_electricity import line_configs
 
@@ -292,7 +296,22 @@ class RealtimeEnergyService:
             if not station_config:
                 return None
 
-            return station_config.get("jienengfeijieneng")
+            # 使用data_codes和object_codes数组，而不是jienengfeijieneng节点
+            # 这样可以与导出功能保持一致，获取所有设备的实时功率
+            data_codes = station_config.get("data_codes", [])
+            object_codes = station_config.get("object_codes", [])
+            
+            if not data_codes or not object_codes:
+                logger.warning(
+                    "站点 %s (线路 %s) 缺少data_codes或object_codes配置",
+                    station_name, line_code
+                )
+                return None
+            
+            return {
+                "data_codes": data_codes,
+                "object_codes": object_codes
+            }
 
         except Exception as exc:
             logger.error("获取节能配置失败: %s", exc)
