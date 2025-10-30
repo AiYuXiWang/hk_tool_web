@@ -59,12 +59,13 @@ async def get_energy_overview(
 async def get_realtime_data(
     line: Optional[str] = Query(None, description="地铁线路，如M3、M8等"),
     station_ip: Optional[str] = Query(None, description="站点IP"),
+    hours: Optional[int] = Query(24, description="时间范围（小时数），默认24小时", ge=1, le=72),
     x_station_ip: Optional[str] = Header(None, alias="X-Station-Ip"),
     energy_service: EnergyService = Depends(get_energy_service),
 ):
     """
     获取实时能耗监控数据
-    支持按线路或站点过滤
+    支持按线路或站点过滤，支持自定义时间范围（1-72小时）
     返回格式: { series: [{ name, points }], timestamps: [] }
     """
     try:
@@ -79,6 +80,7 @@ async def get_realtime_data(
                 "series": [],
                 "timestamps": [],
                 "update_time": datetime.now().isoformat(),
+                "time_range_hours": hours,
             }
 
         data = result.get("data", {})
@@ -87,18 +89,19 @@ async def get_realtime_data(
         station_data_list = data.get("data", [])
         timestamps = data.get("timestamps", [])
 
-        # 只取前12个小时的数据
-        if len(timestamps) > 12:
-            timestamps = timestamps[-12:]
+        # 根据hours参数决定返回多少小时的数据
+        data_points = min(hours, len(timestamps))
+        if len(timestamps) > data_points:
+            timestamps = timestamps[-data_points:]
 
         # 为每个站点生成一条曲线
         series = []
         for station_data in station_data_list[:5]:  # 最多显示5个站点的曲线
             hourly_data = station_data.get("hourly_data", [])
 
-            # 只取最近12小时的数据
-            if len(hourly_data) > 12:
-                hourly_data = hourly_data[-12:]
+            # 根据hours参数截取相应长度的数据
+            if len(hourly_data) > data_points:
+                hourly_data = hourly_data[-data_points:]
 
             series.append(
                 {
@@ -109,8 +112,9 @@ async def get_realtime_data(
 
         return {
             "series": series,
-            "timestamps": timestamps[-12:],  # 确保只返回12个时间戳
+            "timestamps": timestamps[-data_points:],
             "update_time": datetime.now().isoformat(),
+            "time_range_hours": hours,
         }
 
     except Exception as e:
@@ -337,10 +341,13 @@ async def get_trend_data(
 
 @router.get("/equipment")
 async def get_equipment_status(
-    x_station_ip: Optional[str] = Header(None, alias="X-Station-Ip")
+    x_station_ip: Optional[str] = Header(None, alias="X-Station-Ip"),
+    min_power: Optional[float] = Query(0, description="最小功率阈值(kW)", ge=0),
+    max_power: Optional[float] = Query(None, description="最大功率阈值(kW)", ge=0),
 ):
     """
     获取设备运行状态数据
+    支持按功率阈值筛选设备
     """
     try:
         # 导入realtime_energy_service
@@ -380,7 +387,21 @@ async def get_equipment_status(
                         for device in devices[:3]
                     ]
 
-                for device_data in device_powers[:3]:  # 每个站点显示前3个设备
+                # 根据功率阈值筛选设备
+                filtered_device_powers = []
+                for device_data in device_powers:
+                    power_w = device_data.get("power", 0)
+                    # 检查功率阈值
+                    if min_power > 0 and power_w < min_power:
+                        continue
+                    if max_power and max_power > 0 and power_w > max_power:
+                        continue
+                    filtered_device_powers.append(device_data)
+
+                if not filtered_device_powers:
+                    continue
+
+                for device_data in filtered_device_powers[:3]:  # 每个站点显示前3个设备
                     power = device_data.get("power", 0)
                     device_status = device_data.get("status", "online")
 
