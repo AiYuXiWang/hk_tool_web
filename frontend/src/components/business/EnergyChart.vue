@@ -1,36 +1,58 @@
 <template>
   <BaseCard :title="title" class="energy-chart">
     <template #header-extra>
-      <div class="chart-actions">
-        <button 
-          v-if="showRefresh" 
-          class="action-btn" 
-          @click="handleRefresh"
-          :disabled="loading"
-          title="刷新数据"
-        >
-          <svg 
-            class="icon" 
-            :class="{ spinning: loading }"
-            width="16" 
-            height="16" 
-            viewBox="0 0 24 24" 
-            fill="none" 
-            stroke="currentColor"
+      <div class="chart-header-extra">
+        <div v-if="showControls" class="chart-params">
+          <div class="param-field time-range">
+            <label>时间范围：</label>
+            <select v-model="selectedTimeRange" @change="handleTimeRangeChange">
+              <option value="1h">最近1小时</option>
+              <option value="24h">最近24小时</option>
+              <option value="7d">最近7天</option>
+              <option value="30d">最近30天</option>
+            </select>
+          </div>
+          <div class="param-field chart-type">
+            <label>图表类型：</label>
+            <select v-model="selectedChartType" @change="handleChartTypeChange">
+              <option value="line">折线图</option>
+              <option value="bar">柱状图</option>
+              <option value="area">面积图</option>
+              <option value="pie">饼图</option>
+            </select>
+          </div>
+        </div>
+        <div class="chart-actions">
+          <button 
+            v-if="showRefresh" 
+            class="action-btn" 
+            @click="handleRefresh"
+            :disabled="loading"
+            title="刷新数据"
           >
-            <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
-          </svg>
-        </button>
-        <button 
-          v-if="showExport" 
-          class="action-btn" 
-          @click="handleExport"
-          title="导出数据"
-        >
-          <svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
-          </svg>
-        </button>
+            <svg 
+              class="icon" 
+              :class="{ spinning: loading }"
+              width="16" 
+              height="16" 
+              viewBox="0 0 24 24" 
+              fill="none" 
+              stroke="currentColor"
+            >
+              <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
+            </svg>
+          </button>
+          <button 
+            v-if="showExport" 
+            class="action-btn" 
+            @click="handleExport"
+            title="导出数据"
+          >
+            <svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+            </svg>
+          </button>
+        </div>
       </div>
     </template>
     
@@ -52,28 +74,6 @@
         description="当前时间段内没有可用数据"
       />
       <div v-else ref="chartRef" class="chart" :style="{ height: height }"></div>
-    </div>
-    
-    <div v-if="showControls" class="chart-controls">
-      <div class="time-range">
-        <label>时间范围：</label>
-        <select v-model="selectedTimeRange" @change="handleTimeRangeChange">
-          <option value="1h">最近1小时</option>
-          <option value="24h">最近24小时</option>
-          <option value="7d">最近7天</option>
-          <option value="30d">最近30天</option>
-        </select>
-      </div>
-      
-      <div class="chart-type">
-        <label>图表类型：</label>
-        <select v-model="selectedChartType" @change="handleChartTypeChange">
-          <option value="line">折线图</option>
-          <option value="bar">柱状图</option>
-          <option value="area">面积图</option>
-          <option value="pie">饼图</option>
-        </select>
-      </div>
     </div>
   </BaseCard>
 </template>
@@ -134,6 +134,18 @@ const chartRef = ref<HTMLElement>()
 const selectedTimeRange = ref(props.timeRange)
 const selectedChartType = ref(props.chartType)
 let chartInstance: any = null
+
+watch(() => props.timeRange, (val) => {
+  if (val !== undefined && val !== selectedTimeRange.value) {
+    selectedTimeRange.value = val
+  }
+})
+
+watch(() => props.chartType, (val) => {
+  if (val !== undefined && val !== selectedChartType.value) {
+    selectedChartType.value = val
+  }
+})
 
 // 主题：根据 CSS 变量构建并注册 Tech 主题
 const getCssVar = (name: string, fallback?: string) => {
@@ -405,6 +417,58 @@ onUnmounted(() => {
   height: 100%;
 }
 
+.chart-header-extra {
+  display: flex;
+  gap: var(--spacing-md);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.chart-params {
+  display: flex;
+  gap: var(--spacing-md);
+  align-items: center;
+  flex-wrap: wrap;
+  flex: 1;
+}
+
+.param-field {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.param-field label {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  font-weight: var(--font-weight-medium);
+}
+
+.param-field select {
+  padding: 4px 10px;
+  border: 1px solid rgba(0, 212, 255, 0.35);
+  border-radius: var(--border-radius-sm);
+  background: rgba(14, 23, 51, 0.5);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  backdrop-filter: blur(8px);
+  min-width: 120px;
+}
+
+.param-field select:hover {
+  border-color: rgba(0, 212, 255, 0.6);
+  background: rgba(14, 23, 51, 0.7);
+}
+
+.param-field select:focus {
+  outline: none;
+  border-color: rgba(0, 255, 204, 0.85);
+  box-shadow: 0 0 0 1px rgba(0, 255, 204, 0.18);
+}
+
 .chart-actions {
   display: flex;
   gap: var(--spacing-sm);
@@ -475,63 +539,34 @@ onUnmounted(() => {
   min-height: 220px;
 }
 
-.chart-controls {
-  display: flex;
-  gap: var(--spacing-lg);
-  margin-top: var(--spacing-md);
-  padding-top: var(--spacing-md);
-  border-top: 1px solid var(--color-border-secondary);
-}
-
-.time-range,
-.chart-type {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-}
-
-.time-range label,
-.chart-type label {
-  font-size: var(--font-size-sm);
-  color: var(--color-text-secondary);
-  white-space: nowrap;
-}
-
-.time-range select,
-.chart-type select {
-  padding: 4px 8px;
-  border: 1px solid var(--color-border-primary);
-  border-radius: var(--border-radius-sm);
-  background: var(--color-background-primary);
-  color: var(--color-text-primary);
-  font-size: var(--font-size-sm);
-}
-
-.time-range select:focus,
-.chart-type select:focus {
-  outline: none;
-  border-color: var(--color-primary);
-}
-
 /* 响应式设计 */
 @media (max-width: 768px) {
-  .chart-controls {
+  .chart-header-extra {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--spacing-sm);
+  }
+  
+  .chart-params {
     flex-direction: column;
     gap: var(--spacing-sm);
   }
   
-  .time-range,
-  .chart-type {
+  .param-field {
     justify-content: space-between;
+  }
+  
+  .param-field select {
+    flex: 1;
+    min-width: 0;
   }
 }
 
 /* 深色模式 */
 @media (prefers-color-scheme: dark) {
-  .time-range select,
-  .chart-type select {
-    background: var(--color-background-primary);
-    border-color: var(--color-border-primary);
+  .param-field select {
+    background: rgba(14, 23, 51, 0.7);
+    border-color: rgba(0, 212, 255, 0.45);
     color: var(--color-text-primary);
   }
 }
