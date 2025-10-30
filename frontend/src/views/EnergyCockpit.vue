@@ -33,57 +33,6 @@
       </div>
     </div>
 
-    <!-- 滑动栏控制区域 -->
-    <div class="slider-control-panel">
-      <div class="slider-group">
-        <div class="slider-header">
-          <label>时间范围: {{ timeRangeHours }}小时</label>
-          <span class="slider-value">{{ timeRangeHours }}h</span>
-        </div>
-        <el-slider 
-          v-model="timeRangeHours" 
-          :min="1" 
-          :max="72" 
-          :step="1"
-          :show-tooltip="true"
-          :format-tooltip="formatTimeTooltip"
-          @change="onTimeRangeChange"
-        />
-      </div>
-
-      <div class="slider-group">
-        <div class="slider-header">
-          <label>刷新间隔: {{ refreshIntervalSeconds }}秒</label>
-          <span class="slider-value">{{ refreshIntervalSeconds }}s</span>
-        </div>
-        <el-slider 
-          v-model="refreshIntervalSeconds" 
-          :min="10" 
-          :max="300" 
-          :step="10"
-          :show-tooltip="true"
-          :format-tooltip="formatIntervalTooltip"
-          @change="onRefreshIntervalChange"
-        />
-      </div>
-
-      <div class="slider-group">
-        <div class="slider-header">
-          <label>功率阈值: {{ powerThreshold }} W</label>
-          <span class="slider-value">{{ powerThreshold }} W</span>
-        </div>
-        <el-slider 
-          v-model="powerThreshold" 
-          :min="0" 
-          :max="5000" 
-          :step="100"
-          :show-tooltip="true"
-          :format-tooltip="formatPowerTooltip"
-          @change="onPowerThresholdChange"
-        />
-      </div>
-    </div>
-
     <!-- KPI看板 -->
     <div class="kpi-dashboard">
       <EnergyKpiCard
@@ -190,32 +139,12 @@
       />
     </div>
 
-    <!-- 设备监控和优化建议 -->
-    <div class="bottom-section">
-      <EnergyDeviceMonitor
-        title="设备监控"
-        :auto-refresh-interval="refreshIntervalSeconds * 1000"
-        :power-threshold="powerThreshold"
-        @device-selected="onDeviceSelected"
-        @device-controlled="onDeviceControlled"
-        class="device-monitor"
-      />
-      
-      <EnergyOptimizationPanel
-        title="智能节能建议"
-        :auto-refresh="true"
-        :refresh-interval="300000"
-        @suggestion-implemented="onSuggestionImplemented"
-        @suggestion-viewed="onSuggestionViewed"
-        class="optimization-panel"
-      />
-    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch, onUnmounted } from 'vue'
-import { ElMessage, ElSelect, ElOption, ElButton, ElSlider } from 'element-plus'
+import { ElMessage, ElSelect, ElOption, ElButton } from 'element-plus'
 import { useToast } from '@/composables/useToast'
 
 // 百分比显示格式化：正数加+号，保留1位小数
@@ -228,9 +157,7 @@ const formatPercent = (val: number | string) => {
 
 import { 
   EnergyKpiCard, 
-  EnergyChart, 
-  EnergyDeviceMonitor, 
-  EnergyOptimizationPanel 
+  EnergyChart 
 } from '@/components/business'
 import type { ChartData } from '@/components/business/types'
 import { fetchLineConfigs } from '@/api/control'
@@ -245,10 +172,8 @@ const selectedLine = ref<string>('')
 const selectedStation = ref<string>('')
 const trendPeriod = ref<string>('24h')
 
-// 滑动栏状态
-const timeRangeHours = ref<number>(24)
-const refreshIntervalSeconds = ref<number>(30)
-const powerThreshold = ref<number>(0)
+const DEFAULT_TIME_RANGE_HOURS = 24
+const AUTO_REFRESH_INTERVAL_MS = 30 * 1000
 
 const kpi = ref<any>({})
 const realtimeData = ref<ChartData[]>([])
@@ -262,77 +187,8 @@ const stationsOfSelectedLine = computed(() => {
   return lineConfigs.value[selectedLine.value] || []
 })
 
-// 滑动栏工具提示格式化
-const formatTimeTooltip = (value: number) => {
-  if (value < 24) {
-    return `${value} 小时`
-  } else if (value === 24) {
-    return '1 天'
-  } else {
-    const days = Math.floor(value / 24)
-    const hours = value % 24
-    return hours > 0 ? `${days} 天 ${hours} 小时` : `${days} 天`
-  }
-}
-
-const formatIntervalTooltip = (value: number) => {
-  if (value < 60) {
-    return `${value} 秒`
-  } else {
-    const minutes = Math.floor(value / 60)
-    const seconds = value % 60
-    return seconds > 0 ? `${minutes} 分 ${seconds} 秒` : `${minutes} 分钟`
-  }
-}
-
-const formatPowerTooltip = (value: number) => {
-  return `≥ ${value} W`
-}
-
-// 滑动栏变化处理
-const onTimeRangeChange = (value: number) => {
-  console.log('时间范围变化:', value, '小时')
-  toast.info(`时间范围已调整为 ${formatTimeTooltip(value)}`)
-  // 重新加载数据
-  refreshRealtime()
-  refreshTrend()
-}
-
-const onRefreshIntervalChange = (value: number) => {
-  console.log('刷新间隔变化:', value, '秒')
-  toast.info(`刷新间隔已调整为 ${formatIntervalTooltip(value)}`)
-  // 重启自动刷新
-  if (refreshTimer) {
-    clearInterval(refreshTimer)
-    refreshTimer = null
-  }
-  startAutoRefresh()
-}
-
-const onPowerThresholdChange = (value: number) => {
-  console.log('功率阈值变化:', value, 'W')
-  toast.info(`功率阈值已设置为 ${value} W，设备列表已自动筛选`)
-  // 功率阈值会通过 powerThreshold prop 传递给 EnergyDeviceMonitor 组件进行筛选
-}
-
 function exportHistoryData() {
   console.log('导出历史数据')
-}
-
-function onDeviceSelected(device: any) {
-  console.log('选择设备:', device)
-}
-
-function onDeviceControlled(device: any, action: any) {
-  console.log('控制设备:', device, action)
-}
-
-function onSuggestionImplemented(suggestion: any) {
-  console.log('实施建议:', suggestion)
-}
-
-function onSuggestionViewed(suggestion: any) {
-  console.log('查看建议:', suggestion)
 }
 
 async function loadLineConfigs() {
@@ -364,11 +220,11 @@ async function refreshRealtime() {
     const data = await fetchRealtimeEnergy({ 
       line: selectedLine.value, 
       station_ip: selectedStation.value,
-      hours: timeRangeHours.value
+      hours: DEFAULT_TIME_RANGE_HOURS
     })
     const timestamps: string[] = data.timestamps || []
     const seriesData = data.series || []
-    const dataPoints = Math.min(timeRangeHours.value, timestamps.length || timeRangeHours.value)
+    const dataPoints = Math.min(DEFAULT_TIME_RANGE_HOURS, timestamps.length || DEFAULT_TIME_RANGE_HOURS)
     const clippedTimestamps = timestamps.slice(-dataPoints)
 
     realtimeData.value = [{
@@ -386,7 +242,7 @@ async function refreshRealtime() {
     }]
   } catch (error) {
     console.warn('实时数据获取失败，使用示例数据:', error)
-    const dataPoints = Math.min(timeRangeHours.value, 24)
+    const dataPoints = DEFAULT_TIME_RANGE_HOURS
     realtimeData.value = [{
       type: 'line',
       title: '实时能耗',
@@ -503,7 +359,7 @@ function startAutoRefresh() {
   }
   refreshTimer = setInterval(() => {
     refreshRealtime()
-  }, refreshIntervalSeconds.value * 1000) // 使用滑动栏设置的刷新间隔
+  }, AUTO_REFRESH_INTERVAL_MS)
 }
 
 onMounted(async () => {
@@ -746,143 +602,6 @@ watch([selectedLine, selectedStation], () => {
   white-space: nowrap;
 }
 
-/* 滑动栏控制面板样式 */
-.slider-control-panel {
-  position: relative;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 12px;
-  padding: 12px 14px;
-  background: 
-    linear-gradient(135deg, rgba(14, 23, 51, 0.75) 0%, rgba(20, 32, 60, 0.65) 100%);
-  backdrop-filter: blur(12px) saturate(180%);
-  border-radius: var(--border-radius-lg);
-  border: 1px solid rgba(0, 212, 255, 0.35);
-  box-shadow: 
-    0 8px 32px rgba(0, 0, 0, 0.3),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1),
-    0 0 20px rgba(0, 212, 255, 0.15);
-  z-index: 9;
-  animation: slideUp 0.5s ease-out 0.15s both;
-  flex-shrink: 0;
-}
-
-.slider-control-panel::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: linear-gradient(90deg, 
-    transparent 0%, 
-    rgba(138, 43, 226, 0.6) 25%, 
-    rgba(0, 255, 204, 0.8) 50%, 
-    rgba(138, 43, 226, 0.6) 75%, 
-    transparent 100%);
-  border-radius: var(--border-radius-lg) var(--border-radius-lg) 0 0;
-  opacity: 0.8;
-  animation: glowPulse 4s ease-in-out infinite;
-}
-
-.slider-group {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-sm);
-  padding: var(--spacing-sm);
-  background: linear-gradient(135deg, rgba(10, 18, 35, 0.5) 0%, rgba(15, 25, 45, 0.4) 100%);
-  border-radius: var(--border-radius-md);
-  border: 1px solid rgba(0, 212, 255, 0.2);
-  transition: all 0.3s ease;
-}
-
-.slider-group:hover {
-  border-color: rgba(0, 255, 204, 0.5);
-  box-shadow: 0 0 16px rgba(0, 212, 255, 0.2);
-  transform: translateY(-2px);
-}
-
-.slider-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: var(--spacing-xs);
-}
-
-.slider-header label {
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-medium);
-  color: var(--color-text-primary);
-  letter-spacing: 0.05em;
-}
-
-.slider-value {
-  font-size: var(--font-size-lg);
-  font-weight: var(--font-weight-bold);
-  color: rgba(0, 255, 204, 0.95);
-  text-shadow: 0 0 12px rgba(0, 255, 204, 0.6);
-  font-family: 'Courier New', monospace;
-}
-
-/* Element Plus Slider 自定义样式 */
-.slider-group :deep(.el-slider__runway) {
-  background-color: rgba(0, 212, 255, 0.15);
-  height: 8px;
-  border-radius: 4px;
-}
-
-.slider-group :deep(.el-slider__bar) {
-  background: linear-gradient(90deg, 
-    rgba(0, 212, 255, 0.8) 0%, 
-    rgba(0, 255, 204, 0.9) 100%);
-  height: 8px;
-  border-radius: 4px;
-  box-shadow: 0 0 12px rgba(0, 212, 255, 0.5);
-}
-
-.slider-group :deep(.el-slider__button) {
-  width: 20px;
-  height: 20px;
-  border: 3px solid rgba(0, 255, 204, 0.9);
-  background: linear-gradient(135deg, 
-    rgba(14, 23, 51, 0.95) 0%, 
-    rgba(18, 32, 58, 0.9) 100%);
-  box-shadow: 
-    0 0 16px rgba(0, 255, 204, 0.6),
-    0 4px 12px rgba(0, 0, 0, 0.3);
-  transition: all 0.3s ease;
-}
-
-.slider-group :deep(.el-slider__button:hover) {
-  transform: scale(1.2);
-  box-shadow: 
-    0 0 24px rgba(0, 255, 204, 0.8),
-    0 6px 16px rgba(0, 0, 0, 0.4);
-}
-
-.slider-group :deep(.el-slider__button-wrapper) {
-  top: -6px;
-}
-
-.slider-group :deep(.el-slider__button-wrapper:hover .el-slider__button),
-.slider-group :deep(.el-slider__button-wrapper.hover .el-slider__button),
-.slider-group :deep(.el-slider__button-wrapper.dragging .el-slider__button) {
-  transform: scale(1.3);
-  border-color: rgba(0, 255, 204, 1);
-}
-
-/* Tooltip 样式 */
-.slider-group :deep(.el-tooltip__popper) {
-  background: linear-gradient(135deg, 
-    rgba(14, 23, 51, 0.95) 0%, 
-    rgba(18, 32, 58, 0.9) 100%);
-  border: 1px solid rgba(0, 212, 255, 0.5);
-  color: rgba(255, 255, 255, 0.95);
-  font-weight: 600;
-  padding: 8px 12px;
-  box-shadow: 0 8px 24px rgba(0, 212, 255, 0.3);
-}
-
 .kpi-dashboard {
   position: relative;
   display: grid;
@@ -961,25 +680,19 @@ watch([selectedLine, selectedStation], () => {
   animation: slideUp 0.6s ease-out 0.2s both;
 }
 
-.chart-container :deep(.card-header),
-.device-monitor :deep(.card-header),
-.optimization-panel :deep(.card-header) {
+.chart-container :deep(.card-header) {
   background: linear-gradient(135deg, rgba(14, 23, 51, 0.6) 0%, rgba(16, 27, 48, 0.4) 100%);
   border-bottom: 1px solid rgba(0, 212, 255, 0.18);
   backdrop-filter: blur(14px) saturate(140%);
   padding: var(--spacing-md) var(--spacing-lg);
 }
 
-.chart-container :deep(.card-title),
-.device-monitor :deep(.card-title),
-.optimization-panel :deep(.card-title) {
+.chart-container :deep(.card-title) {
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
-.chart-container :deep(.card-body),
-.device-monitor :deep(.card-body),
-.optimization-panel :deep(.card-body) {
+.chart-container :deep(.card-body) {
   background: transparent;
   display: flex;
   flex-direction: column;
@@ -987,15 +700,11 @@ watch([selectedLine, selectedStation], () => {
   min-height: 0;
 }
 
-.chart-container :deep(.card-body > *),
-.device-monitor :deep(.card-body > *),
-.optimization-panel :deep(.card-body > *) {
+.chart-container :deep(.card-body > *) {
   min-height: 0;
 }
 
-.chart-container :deep(.card-footer),
-.device-monitor :deep(.card-footer),
-.optimization-panel :deep(.card-footer) {
+.chart-container :deep(.card-footer) {
   background: rgba(255, 255, 255, 0.02);
   border-top: 1px solid rgba(0, 212, 255, 0.12);
 }
@@ -1031,85 +740,9 @@ watch([selectedLine, selectedStation], () => {
   border-color: rgba(0, 212, 255, 0.6);
 }
 
-.bottom-section {
-  position: relative;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14px;
-  padding: 10px;
-  border-radius: var(--panel-radius);
-  background: linear-gradient(135deg, rgba(12, 20, 42, 0.45) 0%, rgba(18, 40, 68, 0.35) 100%);
-  backdrop-filter: blur(10px) saturate(160%);
-  flex: 1 1 0;
-  min-height: 0;
-}
-
-.bottom-section::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  border: 1px solid rgba(0, 212, 255, 0.08);
-  pointer-events: none;
-}
-
-.device-monitor,
-.optimization-panel {
-  position: relative;
-  background: 
-    linear-gradient(135deg, rgba(14, 23, 51, 0.75) 0%, rgba(18, 28, 55, 0.65) 100%);
-  backdrop-filter: blur(16px) saturate(180%);
-  border-radius: var(--panel-radius);
-  border: 1px solid rgba(0, 212, 255, 0.35);
-  box-shadow: 
-    0 8px 32px rgba(0, 0, 0, 0.3),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08),
-    0 0 20px rgba(0, 212, 255, 0.1);
-  overflow: hidden;
-  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-  animation: slideUp 0.7s ease-out 0.3s both;
-}
-
-/* 底部面板顶部光效 */
-.device-monitor::before,
-.optimization-panel::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: linear-gradient(90deg, 
-    transparent 0%, 
-    rgba(0, 212, 255, 0.5) 30%, 
-    rgba(0, 255, 204, 0.5) 70%, 
-    transparent 100%);
-  opacity: 0;
-  transition: opacity 0.3s ease;
-}
-
-.device-monitor:hover::before,
-.optimization-panel:hover::before {
-  opacity: 1;
-}
-
-.device-monitor:hover,
-.optimization-panel:hover {
-  transform: translateY(-6px) scale(1.01);
-  box-shadow: 
-    0 12px 40px rgba(0, 212, 255, 0.25),
-    0 0 30px rgba(0, 212, 255, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.12);
-  border-color: rgba(0, 212, 255, 0.6);
-}
-
 /* 响应式设计 */
 @media (max-width: 1200px) {
   .chart-section {
-    grid-template-columns: 1fr;
-  }
-  
-  .bottom-section {
     grid-template-columns: 1fr;
   }
 }
@@ -1130,19 +763,12 @@ watch([selectedLine, selectedStation], () => {
     justify-content: space-between;
   }
 
-  .slider-control-panel {
-    grid-template-columns: 1fr;
-    gap: var(--spacing-sm);
-    padding: var(--spacing-md);
-  }
-  
   .kpi-dashboard {
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
     gap: var(--spacing-sm);
   }
   
-  .chart-section,
-  .bottom-section {
+  .chart-section {
     gap: var(--spacing-md);
   }
 }
@@ -1183,9 +809,7 @@ watch([selectedLine, selectedStation], () => {
   }
   
   .control-bar,
-  .chart-container,
-  .device-monitor,
-  .optimization-panel {
+  .chart-container {
     background: rgba(14, 23, 51, 0.65);
     border-color: rgba(0, 212, 255, 0.45);
   }
@@ -1197,33 +821,25 @@ watch([selectedLine, selectedStation], () => {
 
 /* Tech cyan highlight interactions */
 .control-bar,
-.chart-container,
-.device-monitor,
-.optimization-panel {
+.chart-container {
   transition: border-color 120ms ease, box-shadow 200ms ease, transform 200ms ease;
 }
 
 .control-bar:hover,
-.chart-container:hover,
-.device-monitor:hover,
-.optimization-panel:hover {
+.chart-container:hover {
   border-color: rgba(0, 255, 204, 0.85);
   box-shadow: 0 0 0 1px rgba(0, 255, 204, 0.18), 0 0 16px rgba(0, 255, 204, 0.25);
 }
 
 .control-bar:focus-within,
-.chart-container:focus-within,
-.device-monitor:focus-within,
-.optimization-panel:focus-within {
+.chart-container:focus-within {
   border-color: rgba(0, 255, 204, 0.85);
   box-shadow: 0 0 0 1px rgba(0, 255, 204, 0.18), 0 0 16px rgba(0, 255, 204, 0.25), inset 0 0 8px rgba(0, 255, 204, 0.15);
 }
 
 @media (prefers-color-scheme: dark) {
   .control-bar:hover,
-  .chart-container:hover,
-  .device-monitor:hover,
-  .optimization-panel:hover {
+  .chart-container:hover {
     box-shadow: 0 0 0 1px rgba(0, 255, 204, 0.2), 0 0 18px rgba(0, 255, 204, 0.3);
   }
 }
