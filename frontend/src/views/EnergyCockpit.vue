@@ -17,13 +17,18 @@
       </div>
       
       <div class="control-group">
-        <label>趋势周期:</label>
-        <el-select v-model="trendPeriod" placeholder="趋势周期" size="small" @change="onTrendPeriodChange">
-          <el-option label="24小时" value="24h" />
-          <el-option label="7天" value="7d" />
-          <el-option label="30天" value="30d" />
-          <el-option label="90天" value="90d" />
-        </el-select>
+        <label>时间范围:</label>
+        <el-date-picker
+          v-model="timeRange"
+          type="datetimerange"
+          range-separator="至"
+          start-placeholder="开始时间"
+          end-placeholder="结束时间"
+          size="small"
+          :shortcuts="timeRangeShortcuts"
+          value-format="YYYY-MM-DD HH:mm:ss"
+          @change="onTimeRangeChange"
+        />
       </div>
       
       <div class="control-group">
@@ -136,8 +141,7 @@
         :data="realtimeData"
         chart-type="line"
         :loading="realtimeLoading"
-        :time-range="trendPeriod"
-        :show-controls="true"
+        :show-controls="false"
         @refresh="refreshRealtime"
         class="chart-container"
       />
@@ -147,8 +151,7 @@
         :data="historyData"
         chart-type="bar"
         :loading="trendLoading"
-        :time-range="trendPeriod"
-        :show-controls="true"
+        :show-controls="false"
         :show-export="true"
         @export="exportHistoryData"
         @refresh="refreshTrend"
@@ -161,8 +164,7 @@
         :data="classificationData"
         chart-type="pie"
         :loading="classificationLoading"
-        :time-range="trendPeriod"
-        :show-controls="true"
+        :show-controls="false"
         @refresh="refreshClassification"
         class="chart-container"
       />
@@ -173,7 +175,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch, onUnmounted, reactive } from 'vue'
-import { ElMessage, ElSelect, ElOption, ElButton } from 'element-plus'
+import { ElMessage, ElSelect, ElOption, ElButton, ElDatePicker } from 'element-plus'
 import { useToast } from '@/composables/useToast'
 
 // 百分比显示格式化：正数加+号，保留1位小数
@@ -196,13 +198,113 @@ type LineConfigs = { [line: string]: Array<{ station_name: string; station_ip: s
 
 const toast = useToast()
 
+const DEFAULT_TIME_RANGE_HOURS = 24
+const AUTO_REFRESH_INTERVAL_MS = 30 * 1000
+
+const formatDateTime = (date: Date): string => {
+  const pad = (val: number) => String(val).padStart(2, '0')
+  const year = date.getFullYear()
+  const month = pad(date.getMonth() + 1)
+  const day = pad(date.getDate())
+  const hours = pad(date.getHours())
+  const minutes = pad(date.getMinutes())
+  const seconds = pad(date.getSeconds())
+  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`
+}
+
+const createTimeRange = (hours: number): [string, string] => {
+  const end = new Date()
+  const start = new Date(end.getTime() - hours * 3600 * 1000)
+  return [formatDateTime(start), formatDateTime(end)]
+}
+
+const parseDateTime = (value: string): Date | null => {
+  if (!value) return null
+  const normalized = value.replace(' ', 'T')
+  const date = new Date(normalized)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+const ensureTimeRange = (): [string, string] => {
+  const [start, end] = timeRange.value || ['', '']
+  if (!start || !end) {
+    const defaults = createTimeRange(DEFAULT_TIME_RANGE_HOURS)
+    timeRange.value = defaults
+    return defaults
+  }
+  return [start, end]
+}
+
+const getRangeDurationHours = () => {
+  const [start, end] = ensureTimeRange()
+  const startDate = parseDateTime(start)
+  const endDate = parseDateTime(end)
+  if (!startDate || !endDate) return DEFAULT_TIME_RANGE_HOURS
+  const diff = endDate.getTime() - startDate.getTime()
+  return Math.max(1, Math.ceil(diff / (3600 * 1000)))
+}
+
+const getTimeRangeParams = () => {
+  const [start, end] = ensureTimeRange()
+  return {
+    start_time: start,
+    end_time: end
+  }
+}
+
 const lineConfigs = ref<LineConfigs>({})
 const selectedLine = ref<string>('')
 const selectedStation = ref<string>('')
-const trendPeriod = ref<string>('24h')
+const timeRange = ref<[string, string]>(createTimeRange(DEFAULT_TIME_RANGE_HOURS))
 
-const DEFAULT_TIME_RANGE_HOURS = 24
-const AUTO_REFRESH_INTERVAL_MS = 30 * 1000
+// 时间范围快捷选项
+const timeRangeShortcuts = [
+  {
+    text: '最近1小时',
+    value: () => {
+      const end = new Date()
+      const start = new Date()
+      start.setTime(start.getTime() - 3600 * 1000)
+      return [start, end]
+    }
+  },
+  {
+    text: '最近24小时',
+    value: () => {
+      const end = new Date()
+      const start = new Date()
+      start.setTime(start.getTime() - 3600 * 1000 * 24)
+      return [start, end]
+    }
+  },
+  {
+    text: '最近7天',
+    value: () => {
+      const end = new Date()
+      const start = new Date()
+      start.setTime(start.getTime() - 3600 * 1000 * 24 * 7)
+      return [start, end]
+    }
+  },
+  {
+    text: '最近30天',
+    value: () => {
+      const end = new Date()
+      const start = new Date()
+      start.setTime(start.getTime() - 3600 * 1000 * 24 * 30)
+      return [start, end]
+    }
+  },
+  {
+    text: '最近90天',
+    value: () => {
+      const end = new Date()
+      const start = new Date()
+      start.setTime(start.getTime() - 3600 * 1000 * 24 * 90)
+      return [start, end]
+    }
+  }
+]
 
 const DATA_SOURCE_PRIORITY = {
   real: 3,
@@ -331,7 +433,11 @@ function onLineChange() {
   refreshAll()
 }
 
-function onTrendPeriodChange() {
+function onTimeRangeChange(value?: [string, string] | null) {
+  if (!value || value.length < 2 || !value[0] || !value[1]) {
+    timeRange.value = createTimeRange(DEFAULT_TIME_RANGE_HOURS)
+    return
+  }
   refreshAll()
 }
 
@@ -339,11 +445,14 @@ async function refreshRealtime() {
   if (!selectedLine.value || !selectedStation.value) return
   if (realtimeLoading.value) return
   realtimeLoading.value = true
+  const timeParams = getTimeRangeParams()
+  const rangeHours = Math.max(1, Math.min(getRangeDurationHours(), 240))
   try {
     const data = await fetchRealtimeEnergy({ 
       line: selectedLine.value, 
       station_ip: selectedStation.value,
-      hours: DEFAULT_TIME_RANGE_HOURS
+      hours: rangeHours,
+      ...timeParams
     })
 
     const source = typeof data?.data_source === 'string' && ['real', 'simulated', 'mixed'].includes(data.data_source)
@@ -351,10 +460,11 @@ async function refreshRealtime() {
       : ''
     updateDataSource(source)
 
-    const timestamps: string[] = data.timestamps || []
-    const seriesData = data.series || []
-    const dataPoints = Math.min(DEFAULT_TIME_RANGE_HOURS, timestamps.length || DEFAULT_TIME_RANGE_HOURS)
-    const clippedTimestamps = timestamps.slice(-dataPoints)
+    const timestamps: string[] = Array.isArray(data.timestamps) ? data.timestamps : []
+    const seriesData = Array.isArray(data.series) ? data.series : []
+    const availablePoints = timestamps.length
+    const dataPoints = availablePoints > 0 ? Math.min(availablePoints, rangeHours) : rangeHours
+    const clippedTimestamps = availablePoints > 0 ? timestamps.slice(-dataPoints) : []
 
     realtimeData.value = [{
       type: 'line',
@@ -364,14 +474,14 @@ async function refreshRealtime() {
       series: seriesData.map((s: any) => ({ 
         name: s.name, 
         type: 'line', 
-        data: (s.points || []).slice(-(dataPoints)),
+        data: Array.isArray(s.points) ? s.points.slice(-dataPoints) : [],
         smooth: true,
         color: '#409EFF'
       }))
     }]
   } catch (error) {
     console.warn('实时数据获取失败，使用示例数据:', error)
-    const dataPoints = DEFAULT_TIME_RANGE_HOURS
+    const dataPoints = rangeHours
     realtimeData.value = [{
       type: 'line',
       title: '实时能耗',
@@ -399,7 +509,12 @@ async function refreshClassification() {
   if (classificationLoading.value) return
   classificationLoading.value = true
   try {
-    const data = await fetchEnergyClassification({ line: selectedLine.value, station_ip: selectedStation.value, period: trendPeriod.value })
+    const timeParams = getTimeRangeParams()
+    const data = await fetchEnergyClassification({ 
+      line: selectedLine.value, 
+      station_ip: selectedStation.value, 
+      ...timeParams
+    })
     const cats = (data?.items ? data.items.map((it: any) => it.name) : (data?.categories || []))
     const vals = (data?.items ? data.items.map((it: any) => it.kwh) : (data?.values || []))
     classificationData.value = [{
@@ -428,7 +543,11 @@ async function refreshCompare() {
   if (compareLoading.value) return
   compareLoading.value = true
   try {
-    const data = await fetchEnergyCompare({ line: selectedLine.value, station_ip: selectedStation.value, period: trendPeriod.value })
+    const data = await fetchEnergyCompare({ 
+      line: selectedLine.value, 
+      station_ip: selectedStation.value, 
+      ...getTimeRangeParams()
+    })
     compareData.value = data || null
   } catch {
     // 示例数据：当前周期能耗与同比/环比百分比
@@ -443,7 +562,11 @@ async function refreshTrend() {
   if (trendLoading.value) return
   trendLoading.value = true
   try {
-    const data = await fetchEnergyTrend({ line: selectedLine.value, station_ip: selectedStation.value, period: trendPeriod.value })
+    const data = await fetchEnergyTrend({ 
+      line: selectedLine.value, 
+      station_ip: selectedStation.value, 
+      ...getTimeRangeParams()
+    })
     historyData.value = [{
       type: 'bar',
       title: '历史趋势',
@@ -458,15 +581,16 @@ async function refreshTrend() {
     }]
   } catch {
     ElMessage.warning('趋势数据获取失败，显示示例数据')
+    const dataPoints = Math.max(1, Math.min(getRangeDurationHours(), 240))
     historyData.value = [{
       type: 'bar',
       title: '历史趋势',
-      data: Array.from({ length: 24 }, () => Math.round(50 + Math.random() * 30)),
-      xAxis: Array.from({ length: 24 }, (_, i) => `${i}:00`),
+      data: Array.from({ length: dataPoints }, () => Math.round(50 + Math.random() * 30)),
+      xAxis: Array.from({ length: dataPoints }, (_, i) => `${i}:00`),
       series: [{
         name: '耗电量',
         type: 'bar',
-        data: Array.from({ length: 24 }, () => Math.round(50 + Math.random() * 30)),
+        data: Array.from({ length: dataPoints }, () => Math.round(50 + Math.random() * 30)),
         color: '#67C23A'
       }]
     }]
@@ -799,6 +923,29 @@ watch([selectedLine, selectedStation], () => {
 
 .control-bar :deep(.el-button) {
   box-shadow: var(--shadow-active);
+}
+
+/* 时间选择器样式 */
+.control-bar :deep(.el-date-editor) {
+  min-width: 350px;
+}
+
+.control-bar :deep(.el-date-editor .el-input__wrapper) {
+  background-color: transparent;
+  border-color: rgba(0, 212, 255, 0.35);
+}
+
+.control-bar :deep(.el-date-editor .el-range-separator) {
+  color: var(--color-text-primary);
+}
+
+.control-bar :deep(.el-date-editor .el-range-input) {
+  background-color: transparent;
+  color: var(--color-text-primary);
+}
+
+.control-bar :deep(.el-date-editor .el-range-input::placeholder) {
+  color: var(--el-input-placeholder-color);
 }
 
 .control-group {
