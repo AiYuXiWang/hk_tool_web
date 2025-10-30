@@ -18,18 +18,32 @@
       
       <div class="control-group">
         <label>趋势周期:</label>
-        <el-select v-model="trendPeriod" placeholder="趋势周期" size="small" @change="refreshTrend">
+        <el-select v-model="trendPeriod" placeholder="趋势周期" size="small" @change="onTrendPeriodChange">
           <el-option label="24小时" value="24h" />
           <el-option label="7天" value="7d" />
           <el-option label="30天" value="30d" />
+          <el-option label="90天" value="90d" />
         </el-select>
       </div>
       
       <div class="control-group">
-        <el-button @click="refreshAll" type="primary" size="small">
-          <i class="icon-refresh"></i>
+        <el-button @click="refreshAll" type="primary" size="small" :loading="isRefreshing">
+          <template v-if="!isRefreshing">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" style="margin-right: 4px;">
+              <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
+            </svg>
+          </template>
           刷新数据
         </el-button>
+      </div>
+      
+      <!-- 最后刷新时间 -->
+      <div class="last-update" v-if="lastUpdateTime">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <circle cx="12" cy="12" r="10"/>
+          <polyline points="12 6 12 12 16 14"/>
+        </svg>
+        <span>{{ lastUpdateTime }}</span>
       </div>
     </div>
 
@@ -42,6 +56,7 @@
         :trend="{ type: 'up', value: 5.2, icon: 'icon-trending-up' }"
         icon="icon-zap"
         variant="primary"
+        :loading="kpiLoading"
       />
       
       <EnergyKpiCard
@@ -51,6 +66,7 @@
         :trend="{ type: 'down', value: 2.1, icon: 'icon-trending-down' }"
         icon="icon-activity"
         variant="success"
+        :loading="kpiLoading"
       />
       
       <EnergyKpiCard
@@ -60,6 +76,7 @@
         :trend="{ type: 'up', value: 8.3, icon: 'icon-trending-up' }"
         icon="icon-trending-up"
         variant="info"
+        :loading="kpiLoading"
       />
       
       <EnergyKpiCard
@@ -69,6 +86,7 @@
         :trend="{ type: 'stable', value: 0, icon: 'icon-minus' }"
         icon="icon-map-pin"
         variant="warning"
+        :loading="kpiLoading"
       />
 
       <!-- 同比/环比对比 -->
@@ -78,13 +96,14 @@
         :value="Number((compareData?.yoy_percent ?? 0).toFixed(1))"
         unit="%"
         :formatter="formatPercent"
-        :trend="{
-          direction: (compareData?.yoy_percent ?? 0) > 0 ? 'up' : (compareData?.yoy_percent ?? 0) < 0 ? 'down' : 'stable',
-          percentage: Number(Math.abs(compareData?.yoy_percent ?? 0).toFixed(1)),
+        :trend="compareLoading || !compareData ? undefined : {
+          direction: compareData.yoy_percent > 0 ? 'up' : compareData.yoy_percent < 0 ? 'down' : 'stable',
+          percentage: Number(Math.abs(compareData.yoy_percent).toFixed(1)),
           text: '同比去年同期'
         }"
         icon="icon-percent"
         variant="info"
+        :loading="compareLoading"
       />
 
       <EnergyKpiCard
@@ -93,13 +112,14 @@
         :value="Number((compareData?.mom_percent ?? 0).toFixed(1))"
         unit="%"
         :formatter="formatPercent"
-        :trend="{
-          direction: (compareData?.mom_percent ?? 0) > 0 ? 'up' : (compareData?.mom_percent ?? 0) < 0 ? 'down' : 'stable',
-          percentage: Number(Math.abs(compareData?.mom_percent ?? 0).toFixed(1)),
+        :trend="compareLoading || !compareData ? undefined : {
+          direction: compareData.mom_percent > 0 ? 'up' : compareData.mom_percent < 0 ? 'down' : 'stable',
+          percentage: Number(Math.abs(compareData.mom_percent).toFixed(1)),
           text: '环比上一周期'
         }"
         icon="icon-percent"
         variant="info"
+        :loading="compareLoading"
       />
     </div>
 
@@ -109,7 +129,7 @@
         title="实时能耗监测"
         :data="realtimeData"
         chart-type="line"
-        :loading="false"
+        :loading="realtimeLoading"
         :time-period="trendPeriod"
         @refresh="refreshRealtime"
         class="chart-container"
@@ -119,7 +139,7 @@
         title="历史数据趋势"
         :data="historyData"
         chart-type="bar"
-        :loading="false"
+        :loading="trendLoading"
         :time-period="trendPeriod"
         :show-export="true"
         @export="exportHistoryData"
@@ -132,7 +152,7 @@
         title="分类分项能耗"
         :data="classificationData"
         chart-type="pie"
-        :loading="false"
+        :loading="classificationLoading"
         :time-period="trendPeriod"
         @refresh="refreshClassification"
         class="chart-container"
@@ -180,6 +200,13 @@ const realtimeData = ref<ChartData[]>([])
 const historyData = ref<ChartData[]>([])
 const classificationData = ref<ChartData[]>([])
 const compareData = ref<{ yoy_percent: number; mom_percent: number; current_kwh: number } | null>(null)
+const isRefreshing = ref<boolean>(false)
+const lastUpdateTime = ref<string>('')
+const realtimeLoading = ref<boolean>(false)
+const trendLoading = ref<boolean>(false)
+const classificationLoading = ref<boolean>(false)
+const kpiLoading = ref<boolean>(false)
+const compareLoading = ref<boolean>(false)
 let refreshTimer: NodeJS.Timeout | null = null
 
 const stationsOfSelectedLine = computed(() => {
@@ -187,8 +214,46 @@ const stationsOfSelectedLine = computed(() => {
   return lineConfigs.value[selectedLine.value] || []
 })
 
-function exportHistoryData() {
-  console.log('导出历史数据')
+// 格式化更新时间
+function updateLastUpdateTime() {
+  const now = new Date()
+  const hours = String(now.getHours()).padStart(2, '0')
+  const minutes = String(now.getMinutes()).padStart(2, '0')
+  const seconds = String(now.getSeconds()).padStart(2, '0')
+  lastUpdateTime.value = `上次刷新：${hours}:${minutes}:${seconds}`
+}
+
+// 导出历史数据
+async function exportHistoryData() {
+  try {
+    ElMessage.info('正在准备导出数据...')
+    // 构建导出数据
+    const exportData = {
+      line: selectedLine.value,
+      station: selectedStation.value,
+      period: trendPeriod.value,
+      data: historyData.value,
+      kpi: kpi.value,
+      timestamp: new Date().toISOString()
+    }
+    
+    // 创建下载链接
+    const dataStr = JSON.stringify(exportData, null, 2)
+    const blob = new Blob([dataStr], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `energy_data_${selectedLine.value}_${Date.now()}.json`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+    
+    ElMessage.success('数据导出成功')
+  } catch (error) {
+    ElMessage.error('数据导出失败')
+    console.error('Export error:', error)
+  }
 }
 
 async function loadLineConfigs() {
@@ -214,8 +279,14 @@ function onLineChange() {
   refreshAll()
 }
 
+function onTrendPeriodChange() {
+  refreshAll()
+}
+
 async function refreshRealtime() {
   if (!selectedLine.value || !selectedStation.value) return
+  if (realtimeLoading.value) return
+  realtimeLoading.value = true
   try {
     const data = await fetchRealtimeEnergy({ 
       line: selectedLine.value, 
@@ -256,11 +327,18 @@ async function refreshRealtime() {
         color: '#409EFF'
       }]
     }]
+  } finally {
+    realtimeLoading.value = false
+    if (!isRefreshing.value) {
+      updateLastUpdateTime()
+    }
   }
 }
 
 async function refreshClassification() {
   if (!selectedLine.value || !selectedStation.value) return
+  if (classificationLoading.value) return
+  classificationLoading.value = true
   try {
     const data = await fetchEnergyClassification({ line: selectedLine.value, station_ip: selectedStation.value, period: trendPeriod.value })
     const cats = (data?.items ? data.items.map((it: any) => it.name) : (data?.categories || []))
@@ -281,22 +359,30 @@ async function refreshClassification() {
       data: vals,
       xAxis: cats
     }]
+  } finally {
+    classificationLoading.value = false
   }
 }
 
 async function refreshCompare() {
   if (!selectedLine.value || !selectedStation.value) return
+  if (compareLoading.value) return
+  compareLoading.value = true
   try {
     const data = await fetchEnergyCompare({ line: selectedLine.value, station_ip: selectedStation.value, period: trendPeriod.value })
     compareData.value = data || null
   } catch {
     // 示例数据：当前周期能耗与同比/环比百分比
     compareData.value = { yoy_percent: (Math.random() * 20 - 10), mom_percent: (Math.random() * 20 - 10), current_kwh: Math.round(12000 + Math.random() * 3000) }
+  } finally {
+    compareLoading.value = false
   }
 }
 
 async function refreshTrend() {
   if (!selectedLine.value || !selectedStation.value) return
+  if (trendLoading.value) return
+  trendLoading.value = true
   try {
     const data = await fetchEnergyTrend({ line: selectedLine.value, station_ip: selectedStation.value, period: trendPeriod.value })
     historyData.value = [{
@@ -325,11 +411,15 @@ async function refreshTrend() {
         color: '#67C23A'
       }]
     }]
+  } finally {
+    trendLoading.value = false
   }
 }
 
 async function refreshKpi() {
   if (!selectedLine.value) return
+  if (kpiLoading.value) return
+  kpiLoading.value = true
   try {
     const data = await fetchEnergyKpi({ line: selectedLine.value, station_ip: selectedStation.value })
     kpi.value = data
@@ -340,17 +430,29 @@ async function refreshKpi() {
       peak_kw: 680.5,
       station_count: stationsOfSelectedLine.value.length,
     }
+  } finally {
+    kpiLoading.value = false
   }
 }
 
 
 
-function refreshAll() {
-  refreshRealtime()
-  refreshTrend()
-  refreshKpi()
-  refreshCompare()
-  refreshClassification()
+async function refreshAll() {
+  if (!selectedLine.value || !selectedStation.value) return
+  if (isRefreshing.value) return
+  isRefreshing.value = true
+  try {
+    await Promise.all([
+      refreshRealtime(),
+      refreshTrend(),
+      refreshKpi(),
+      refreshCompare(),
+      refreshClassification()
+    ])
+    updateLastUpdateTime()
+  } finally {
+    isRefreshing.value = false
+  }
 }
 
 function startAutoRefresh() {
@@ -600,6 +702,38 @@ watch([selectedLine, selectedStation], () => {
   font-weight: var(--font-weight-medium);
   color: var(--color-text-primary);
   white-space: nowrap;
+}
+
+/* 最后更新时间样式 */
+.last-update {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  padding: 6px 12px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.75);
+  background: linear-gradient(135deg, rgba(0, 212, 255, 0.1) 0%, rgba(138, 43, 226, 0.08) 100%);
+  border-radius: 8px;
+  border: 1px solid rgba(0, 212, 255, 0.2);
+  backdrop-filter: blur(8px);
+  animation: fadeInBadge 0.3s ease-out;
+}
+
+.last-update svg {
+  stroke-width: 2;
+  flex-shrink: 0;
+}
+
+@keyframes fadeInBadge {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .kpi-dashboard {
