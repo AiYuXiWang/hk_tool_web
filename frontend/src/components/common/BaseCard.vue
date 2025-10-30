@@ -71,6 +71,9 @@ const bodyClasses = computed(() => {
   overflow: hidden;
   box-shadow: var(--shadow-light);
   transition: all var(--duration-base) var(--ease-out);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
 }
 
 /* 边框样式 */
@@ -135,9 +138,10 @@ const bodyClasses = computed(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--spacing-md) var(--spacing-lg);
+  padding: 10px 14px;
   border-bottom: 1px solid var(--color-border-secondary);
   background: var(--color-background-secondary);
+  flex-shrink: 0;
 }
 
 .card-header-content {
@@ -146,7 +150,7 @@ const bodyClasses = computed(() => {
 
 .card-title {
   margin: 0;
-  font-size: var(--font-size-lg);
+  font-size: 15px;
   font-weight: var(--font-weight-semibold);
   color: var(--color-text-primary);
 }
@@ -160,17 +164,20 @@ const bodyClasses = computed(() => {
 /* 卡片内容 */
 .card-body {
   position: relative;
+  flex: 1;
+  min-height: 0;
 }
 
 .card-body-padded {
-  padding: var(--spacing-lg);
+  padding: 14px;
 }
 
 /* 卡片底部 */
 .card-footer {
-  padding: var(--spacing-md) var(--spacing-lg);
+  padding: 10px 14px;
   border-top: 1px solid var(--color-border-secondary);
   background: var(--color-background-secondary);
+  flex-shrink: 0;
 }
 
 /* 动画 */

@@ -112,7 +112,7 @@ const props = withDefaults(defineProps<Props>(), {
   loading: false,
   error: '',
   errorDescription: '数据加载失败，请重试',
-  height: '400px',
+  height: '100%',
   showControls: true,
   showRefresh: true,
   showExport: false,
@@ -463,11 +463,16 @@ onUnmounted(() => {
 
 .chart-container {
   position: relative;
-  min-height: 300px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
 }
 
 .chart {
   width: 100%;
+  flex: 1;
+  min-height: 220px;
 }
 
 .chart-controls {

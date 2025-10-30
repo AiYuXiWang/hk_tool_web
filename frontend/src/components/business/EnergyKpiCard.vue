@@ -247,17 +247,17 @@ const formattedValue = computed(() => {
 
 .kpi-card-content {
   position: relative;
-  padding: var(--spacing-lg);
+  padding: 12px 14px;
   z-index: 1;
 }
 
 /* 尺寸变体 */
 .kpi-card-sm .kpi-card-content {
-  padding: var(--spacing-md);
+  padding: 8px 10px;
 }
 
 .kpi-card-lg .kpi-card-content {
-  padding: var(--spacing-xl);
+  padding: 16px 18px;
 }
 
 /* 颜色变体 */
@@ -306,29 +306,34 @@ const formattedValue = computed(() => {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  margin-bottom: var(--spacing-md);
+  margin-bottom: 8px;
 }
 
 .kpi-title h3 {
   margin: 0;
-  font-size: var(--font-size-lg);
+  font-size: 14px;
   font-weight: var(--font-weight-semibold);
   color: var(--color-text-primary);
 }
 
 .kpi-subtitle {
-  font-size: var(--font-size-sm);
+  font-size: 11px;
   color: var(--color-text-secondary);
-  margin-top: var(--spacing-xs);
+  margin-top: 3px;
 }
 
 .kpi-icon {
   flex-shrink: 0;
-  padding: var(--spacing-sm);
-  border-radius: 16px;
+  padding: 8px;
+  border-radius: 12px;
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(0, 212, 255, 0.18) 100%);
   box-shadow: 0 10px 30px rgba(0, 212, 255, 0.2);
   backdrop-filter: blur(12px);
+}
+
+.kpi-icon svg {
+  width: 18px;
+  height: 18px;
 }
 
 .kpi-card-default .kpi-icon {
@@ -365,28 +370,28 @@ const formattedValue = computed(() => {
 .kpi-value {
   display: flex;
   align-items: baseline;
-  gap: var(--spacing-sm);
-  margin-bottom: var(--spacing-sm);
+  gap: 6px;
+  margin-bottom: 6px;
 }
 
 .value {
-  font-size: var(--font-size-xxl);
+  font-size: 22px;
   font-weight: var(--font-weight-bold);
   font-variant-numeric: tabular-nums;
   text-shadow: 
-    0 0 20px rgba(0, 212, 255, 0.5),
-    0 0 40px rgba(0, 212, 255, 0.3),
-    0 2px 4px rgba(0, 0, 0, 0.3);
+    0 0 14px rgba(0, 212, 255, 0.45),
+    0 0 24px rgba(0, 212, 255, 0.28),
+    0 1px 3px rgba(0, 0, 0, 0.3);
   transition: all 0.3s ease;
-  filter: drop-shadow(0 0 8px rgba(0, 212, 255, 0.6));
+  filter: drop-shadow(0 0 6px rgba(0, 212, 255, 0.5));
 }
 
 .kpi-card:hover .value {
   text-shadow: 
-    0 0 30px rgba(0, 212, 255, 0.8),
-    0 0 50px rgba(0, 212, 255, 0.5),
+    0 0 22px rgba(0, 212, 255, 0.7),
+    0 0 32px rgba(0, 212, 255, 0.45),
     0 2px 6px rgba(0, 0, 0, 0.4);
-  filter: drop-shadow(0 0 12px rgba(0, 255, 204, 0.8));
+  filter: drop-shadow(0 0 10px rgba(0, 255, 204, 0.7));
 }
 
 @keyframes numberPulse {
@@ -399,11 +404,11 @@ const formattedValue = computed(() => {
 }
 
 .kpi-card-sm .value {
-  font-size: var(--font-size-xl);
+  font-size: 18px;
 }
 
 .kpi-card-lg .value {
-  font-size: 28px;
+  font-size: 26px;
 }
 
 .kpi-value-text {
@@ -427,25 +432,25 @@ const formattedValue = computed(() => {
 }
 
 .unit {
-  font-size: var(--font-size-lg);
+  font-size: 13px;
   color: var(--color-text-secondary);
   font-weight: var(--font-weight-medium);
 }
 
 .kpi-card-sm .unit {
-  font-size: var(--font-size-base);
+  font-size: 12px;
 }
 
 .kpi-card-lg .unit {
-  font-size: var(--font-size-xl);
+  font-size: 15px;
 }
 
 /* KPI趋势 */
 .kpi-trend {
   display: flex;
   align-items: center;
-  gap: var(--spacing-sm);
-  font-size: var(--font-size-sm);
+  gap: 6px;
+  font-size: 12px;
 }
 
 .trend-indicator {
