@@ -110,11 +110,15 @@ async def get_realtime_data(
                 }
             )
 
+        # 从result中获取数据来源标识
+        data_source = data.get("data_source", "simulated")
+
         return {
             "series": series,
             "timestamps": timestamps[-data_points:],
             "update_time": datetime.now().isoformat(),
             "time_range_hours": hours,
+            "data_source": data_source,
         }
 
     except Exception as e:

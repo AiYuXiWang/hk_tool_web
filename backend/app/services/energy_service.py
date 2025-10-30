@@ -204,9 +204,11 @@ class EnergyService(CacheableService):
                 station
             )
 
+            is_real_data = current_power is not None
+
             # 如果获取失败，使用估算值
             if current_power is None:
-                self.logger.warning(f"站点 {station['name']} 实时功率获取失败，使用估算值")
+                self.logger.warning(f"站点 {station['name']} 实时功率获取失败，使用模拟数据")
                 base_power = device_count * 25 + random.uniform(-10, 10)
                 current_power = max(0, base_power + random.uniform(-15, 15))
 
@@ -220,6 +222,7 @@ class EnergyService(CacheableService):
                 "current_power": current_power,
                 "daily_consumption": daily_consumption,
                 "device_count": device_count,
+                "data_source": "real" if is_real_data else "simulated",
             }
 
         except Exception as e:
@@ -239,9 +242,12 @@ class EnergyService(CacheableService):
                 station
             )
 
+            # 记录数据来源
+            is_real_data = current_power is not None
+
             # 如果获取失败，使用估算值
             if current_power is None:
-                self.logger.warning(f"站点 {station['name']} 实时功率获取失败，使用估算值")
+                self.logger.warning(f"站点 {station['name']} 实时功率获取失败，使用模拟数据")
                 base_power = device_count * 25 + random.uniform(-10, 10)
                 current_power = max(0, base_power + random.uniform(-15, 15))
             else:
@@ -265,6 +271,7 @@ class EnergyService(CacheableService):
                 "current_power": round(current_power, 1),
                 "device_count": device_count,
                 "hourly_data": hourly_data,
+                "data_source": "real" if is_real_data else "simulated",
             }
 
         except Exception as e:
@@ -277,6 +284,21 @@ class EnergyService(CacheableService):
         """计算总览指标"""
         total_consumption = sum(data["daily_consumption"] for data in station_data_list)
         current_power = sum(data["current_power"] for data in station_data_list)
+
+        # 判断整体数据来源
+        has_real_data = any(
+            item.get("data_source") == "real" for item in station_data_list
+        )
+        all_real_data = all(
+            item.get("data_source") == "real" for item in station_data_list
+        )
+
+        if all_real_data:
+            data_source = "real"
+        elif has_real_data:
+            data_source = "mixed"
+        else:
+            data_source = "simulated"
 
         # 计算趋势数据（模拟）
         yesterday_consumption = total_consumption * 0.95
@@ -322,6 +344,7 @@ class EnergyService(CacheableService):
             },
             "station_count": total_stations,
             "update_time": datetime.now().isoformat(),
+            "data_source": data_source,
         }
 
     async def _generate_realtime_response(
@@ -335,7 +358,23 @@ class EnergyService(CacheableService):
                 "total_power": 0,
                 "chart_data": [],
                 "station_comparison": [],
+                "data_source": "simulated",
             }
+
+        # 判断整体数据来源：如果任何一个站点是真实数据，则标记为real
+        has_real_data = any(
+            item.get("data_source") == "real" for item in station_data_list
+        )
+        all_real_data = all(
+            item.get("data_source") == "real" for item in station_data_list
+        )
+
+        if all_real_data:
+            data_source = "real"
+        elif has_real_data:
+            data_source = "mixed"
+        else:
+            data_source = "simulated"
 
         # 生成时间戳
         now = datetime.now()
@@ -383,6 +422,7 @@ class EnergyService(CacheableService):
             "total_power": round(total_current_power, 1),
             "chart_data": chart_data,
             "station_comparison": station_comparison,
+            "data_source": data_source,
         }
 
     async def _generate_historical_trends(

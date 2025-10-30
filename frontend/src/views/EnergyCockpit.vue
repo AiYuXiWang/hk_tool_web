@@ -45,6 +45,12 @@
         </svg>
         <span>{{ lastUpdateTime }}</span>
       </div>
+      
+      <!-- 数据来源指示器 -->
+      <div class="data-source-indicator" :class="dataSourceClass" v-if="dataSource">
+        <span class="indicator-dot"></span>
+        <span class="indicator-text">{{ dataSourceText }}</span>
+      </div>
     </div>
 
     <!-- KPI看板 -->
@@ -166,7 +172,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, onUnmounted } from 'vue'
+import { ref, computed, onMounted, watch, onUnmounted, reactive } from 'vue'
 import { ElMessage, ElSelect, ElOption, ElButton } from 'element-plus'
 import { useToast } from '@/composables/useToast'
 
@@ -198,6 +204,14 @@ const trendPeriod = ref<string>('24h')
 const DEFAULT_TIME_RANGE_HOURS = 24
 const AUTO_REFRESH_INTERVAL_MS = 30 * 1000
 
+const DATA_SOURCE_PRIORITY = {
+  real: 3,
+  mixed: 2,
+  simulated: 1,
+} as const
+
+type DataSourceType = keyof typeof DATA_SOURCE_PRIORITY
+
 const kpi = ref<any>({})
 const realtimeData = ref<ChartData[]>([])
 const historyData = ref<ChartData[]>([])
@@ -210,11 +224,27 @@ const trendLoading = ref<boolean>(false)
 const classificationLoading = ref<boolean>(false)
 const kpiLoading = ref<boolean>(false)
 const compareLoading = ref<boolean>(false)
+const dataSource = ref<DataSourceType | ''>('')
 let refreshTimer: NodeJS.Timeout | null = null
 
 const stationsOfSelectedLine = computed(() => {
   if (!selectedLine.value) return []
   return lineConfigs.value[selectedLine.value] || []
+})
+
+const dataSourceClass = computed(() => {
+  if (!dataSource.value) return ''
+  return `data-source-${dataSource.value}`
+})
+
+const dataSourceText = computed(() => {
+  if (!dataSource.value) return ''
+  const texts: Record<DataSourceType, string> = {
+    real: '真实数据',
+    simulated: '模拟数据',
+    mixed: '混合数据',
+  }
+  return texts[dataSource.value]
 })
 
 // 格式化更新时间
@@ -224,6 +254,25 @@ function updateLastUpdateTime() {
   const minutes = String(now.getMinutes()).padStart(2, '0')
   const seconds = String(now.getSeconds()).padStart(2, '0')
   lastUpdateTime.value = `上次刷新：${hours}:${minutes}:${seconds}`
+}
+
+// 更新数据来源指示器
+function updateDataSource(newSource: DataSourceType | '') {
+  if (!newSource) return
+  
+  // 如果还没有设置数据源，直接设置
+  if (!dataSource.value) {
+    dataSource.value = newSource
+    return
+  }
+  
+  // 如果新数据源优先级更高（更真实），则更新
+  const currentPriority = DATA_SOURCE_PRIORITY[dataSource.value as DataSourceType] || 0
+  const newPriority = DATA_SOURCE_PRIORITY[newSource] || 0
+  
+  if (newPriority >= currentPriority) {
+    dataSource.value = newSource
+  }
 }
 
 // 导出历史数据
@@ -296,6 +345,12 @@ async function refreshRealtime() {
       station_ip: selectedStation.value,
       hours: DEFAULT_TIME_RANGE_HOURS
     })
+
+    const source = typeof data?.data_source === 'string' && ['real', 'simulated', 'mixed'].includes(data.data_source)
+      ? (data.data_source as DataSourceType)
+      : ''
+    updateDataSource(source)
+
     const timestamps: string[] = data.timestamps || []
     const seriesData = data.series || []
     const dataPoints = Math.min(DEFAULT_TIME_RANGE_HOURS, timestamps.length || DEFAULT_TIME_RANGE_HOURS)
@@ -330,6 +385,7 @@ async function refreshRealtime() {
         color: '#409EFF'
       }]
     }]
+    updateDataSource('simulated')
   } finally {
     realtimeLoading.value = false
     if (!isRefreshing.value) {
@@ -609,6 +665,59 @@ watch([selectedLine, selectedStation], () => {
   /* 关键修复：让输入框背景透明，避免白底白字 */
   --el-input-bg-color: transparent;
   --el-fill-color-blank: transparent;
+}
+
+.data-source-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.88);
+  margin-left: auto;
+  box-shadow: 0 0 12px rgba(0, 212, 255, 0.35);
+  transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.data-source-indicator .indicator-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 8px currentColor;
+}
+
+.data-source-indicator.data-source-real {
+  background: rgba(34, 197, 94, 0.16);
+  color: #6effb7;
+  box-shadow: 0 0 16px rgba(34, 197, 94, 0.35);
+}
+
+.data-source-indicator.data-source-real .indicator-dot {
+  background: #34d399;
+}
+
+.data-source-indicator.data-source-mixed {
+  background: rgba(250, 204, 21, 0.16);
+  color: #ffe27f;
+  box-shadow: 0 0 16px rgba(250, 204, 21, 0.3);
+}
+
+.data-source-indicator.data-source-mixed .indicator-dot {
+  background: #facc15;
+}
+
+.data-source-indicator.data-source-simulated {
+  background: rgba(248, 113, 113, 0.16);
+  color: #ffc1b5;
+  box-shadow: 0 0 16px rgba(248, 113, 113, 0.3);
+}
+
+.data-source-indicator.data-source-simulated .indicator-dot {
+  background: #f87171;
 }
 
 /* 控制栏边缘发光效果 */

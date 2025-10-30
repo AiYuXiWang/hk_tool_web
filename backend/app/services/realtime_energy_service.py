@@ -61,11 +61,33 @@ class RealtimeEnergyService:
         try:
             power = await self._query_recent_power(api_url, object_codes, data_codes)
             if power is not None:
-                logger.info("站点 %s 实时功率: %.2f kW", station_name, power)
+                logger.info("站点 %s 实时功率: %.2f kW (真实数据)", station_name, power)
             return power
         except Exception as exc:  # pragma: no cover - 网络异常
             logger.error("获取站点 %s 实时功率失败: %s", station.get("name"), exc)
             return None
+
+    def check_data_availability(self, station: Dict[str, Any]) -> bool:
+        """
+        检查站点是否能获取到真实数据
+        返回True表示配置正确且可能获取到真实数据，False表示必定使用模拟数据
+        """
+        if not self.requests_available:
+            return False
+
+        station_ip = station.get("ip")
+        if not station_ip:
+            return False
+
+        line_code = station.get("line")
+        station_name = station.get("name")
+        jieneng_config = self._get_jieneng_config(line_code, station_name)
+        if not jieneng_config:
+            return False
+
+        object_codes = jieneng_config.get("object_codes", [])
+        data_codes = jieneng_config.get("data_codes", [])
+        return bool(object_codes and data_codes)
 
     async def _query_recent_power(
         self, api_url: str, object_codes: List[str], data_codes: List[str]
