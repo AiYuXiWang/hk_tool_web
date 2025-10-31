@@ -274,25 +274,89 @@ def _sum_kw_from_data_list(data_list: List[Dict[str, Any]]) -> float:
 async def get_energy_kpi(line: str, station_ip: Optional[str] = None):
     """能耗指标 KPI 看板数据。
     返回：total_kwh_today, current_kw, peak_kw, station_count
-    说明：当前实现依据 config_electricity 的设备额定功率近似估算，
-    在无实时平台连接的环境下提供稳定的可视化数据源。
+    使用真实电表读数计算能耗，与导出功能保持一致。
     """
-    cfg = _get_station_config(line, station_ip)
-    sum_kw = _sum_kw_from_data_list(cfg.get("data_list", []))
     from datetime import datetime
 
+    from backend.app.config.electricity_config import ElectricityConfig
+    from backend.app.services.realtime_energy_service import RealtimeEnergyService
+
+    electricity_config = ElectricityConfig()
+    realtime_service = RealtimeEnergyService()
+
+    # 获取站点配置
+    if station_ip:
+        station_config = electricity_config.get_station_by_ip(station_ip)
+        if not station_config:
+            raise HTTPException(status_code=404, detail=f"车站 {station_ip} 未找到")
+        stations = [station_config]
+    elif line:
+        stations = electricity_config.get_stations_by_line(line)
+        if not stations:
+            raise HTTPException(status_code=404, detail=f"线路 {line} 不存在")
+    else:
+        raise HTTPException(status_code=400, detail="必须提供 line 或 station_ip 参数")
+
+    # 计算当天的时间范围（从00:00到现在）
     now = datetime.now()
-    hours_today = now.hour + now.minute / 60.0
-    utilization = 0.35  # 近似平均负荷系数
-    total_kwh_today = sum_kw * utilization * max(hours_today, 0.1)
-    current_kw = sum_kw * 0.40
-    peak_kw = sum_kw * 0.75
-    station_count = len(config_electricity.line_configs.get(line, {}))
+    start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    # 获取所有站点的真实数据
+    total_kwh_today = 0.0
+    current_kw = 0.0
+    peak_kw = 0.0
+    valid_station_count = 0
+
+    for station in stations:
+        try:
+            # 获取当天能耗（使用电表读数）
+            daily_consumption = await realtime_service.get_station_energy_consumption(
+                station, start_of_day, now
+            )
+
+            # 获取当前功率
+            station_current_kw = await realtime_service.get_station_realtime_power(
+                station
+            )
+
+            if daily_consumption is not None:
+                total_kwh_today += daily_consumption
+                valid_station_count += 1
+
+            if station_current_kw is not None:
+                current_kw += station_current_kw
+                # 估算峰值功率为当前功率的1.5倍
+                peak_kw += station_current_kw * 1.5
+
+            logger.info(
+                f"[{station.get('name')}] 日能耗: {daily_consumption or 0:.2f} kWh, "
+                f"当前功率: {station_current_kw or 0:.2f} kW"
+            )
+
+        except Exception as e:
+            logger.warning(f"获取站点 {station.get('name')} 的能耗数据失败: {e}，该站点数据将被跳过")
+            continue
+
+    # 如果所有站点都获取失败，回退到估算方式
+    if valid_station_count == 0:
+        logger.warning(f"线路 {line} 所有站点的真实能耗数据获取失败，使用功率估算方式")
+        cfg = _get_station_config(line, station_ip)
+        sum_kw = _sum_kw_from_data_list(cfg.get("data_list", []))
+        hours_today = now.hour + now.minute / 60.0
+        utilization = 0.35  # 近似平均负荷系数
+        total_kwh_today = sum_kw * utilization * max(hours_today, 0.1)
+        current_kw = sum_kw * 0.40
+        peak_kw = sum_kw * 0.75
+
+    station_count = len(stations)
+
     return {
         "total_kwh_today": round(total_kwh_today, 2),
         "current_kw": round(current_kw, 2),
         "peak_kw": round(peak_kw, 2),
         "station_count": station_count,
+        "data_source": "real" if valid_station_count > 0 else "estimated",
+        "valid_station_count": valid_station_count,
     }
 
 
