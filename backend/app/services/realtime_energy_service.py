@@ -118,6 +118,229 @@ class RealtimeEnergyService:
             )
             return None
 
+    async def get_station_energy_consumption(
+        self, station: Dict[str, Any], start_time: datetime, end_time: datetime
+    ) -> Optional[float]:
+        """
+        获取单个站点在指定时间段的能耗
+
+        使用与export_service.py中process_data函数相同的逻辑：
+        1. 获取时间段开始时的电表读数（起码）
+        2. 获取时间段结束时的电表读数（止码）
+        3. 计算差值作为耗电量
+
+        Args:
+            station: 站点配置信息
+            start_time: 开始时间
+            end_time: 结束时间
+
+        Returns:
+            耗电量(kWh)，如果获取失败返回None
+        """
+        station_name = station.get("name", "未知站点")
+        station_ip = station.get("ip")
+        line_code = station.get("line", "未知线路")
+
+        logger.info(
+            "开始获取站点能耗 - 站点: %s, IP: %s, 线路: %s, 时间段: %s ~ %s",
+            station_name,
+            station_ip,
+            line_code,
+            start_time,
+            end_time,
+        )
+
+        if not self.requests_available:
+            logger.error("❌ [%s] requests模块不可用，无法查询能耗数据", station_name)
+            return None
+
+        if not station_ip:
+            logger.error("❌ [%s] 站点配置缺少IP地址", station_name)
+            return None
+
+        # 获取配置
+        jieneng_config = self._get_jieneng_config(line_code, station_name)
+        if not jieneng_config:
+            logger.error("❌ [%s] 站点没有节能数据配置", station_name)
+            return None
+
+        object_codes = jieneng_config.get("object_codes", [])
+        data_codes = jieneng_config.get("data_codes", [])
+
+        if not object_codes or not data_codes:
+            logger.error("❌ [%s] 节能配置不完整", station_name)
+            return None
+
+        api_url = self._get_station_api_url(station_ip)
+
+        try:
+            # 按照export_service.py的process_data函数逻辑获取能耗
+            consumption = await self._calculate_consumption_from_meter_readings(
+                api_url, object_codes, data_codes, start_time, end_time, station_name
+            )
+
+            if consumption is not None:
+                logger.info("✅ [%s] 成功获取能耗: %.2f kWh (真实数据)", station_name, consumption)
+            else:
+                logger.warning("⚠️ [%s] 未能获取有效能耗数据", station_name)
+
+            return consumption
+
+        except Exception as exc:
+            logger.error(
+                "❌ [%s] 获取能耗异常: %s (类型: %s)", station_name, str(exc), type(exc).__name__
+            )
+            return None
+
+    async def _calculate_consumption_from_meter_readings(
+        self,
+        api_url: str,
+        object_codes: List[str],
+        data_codes: List[str],
+        start_time: datetime,
+        end_time: datetime,
+        station_name: str = "未知站点",
+    ) -> Optional[float]:
+        """
+        根据电表起码和止码计算能耗
+
+        这个方法完全复制export_service.py中process_data函数的逻辑
+        """
+        start_timestamp = int(start_time.timestamp() * 1000)
+        end_timestamp = int(end_time.timestamp() * 1000)
+
+        # 获取结束时间的电表读数（止码）
+        # 参考export_service.py第182-192行
+        end_obj = {
+            "dataCodes": data_codes,
+            "endTime": end_timestamp,
+            "fill": "0",
+            "funcName": "mean",
+            "funcTime": "",
+            "measurement": "realData",
+            "objectCodes": object_codes,
+            "startTime": end_timestamp - 10 * 60000,  # 10分钟前
+        }
+
+        loop = asyncio.get_running_loop()
+        end_data = await loop.run_in_executor(
+            None, self._fetch_select_his_data, api_url, end_obj
+        )
+
+        if not end_data:
+            logger.error("❌ [%s] 获取结束时间电表读数失败", station_name)
+            return None
+
+        # 获取开始时间的电表读数（起码）
+        # 参考export_service.py第200-210行
+        start_obj = {
+            "dataCodes": data_codes,
+            "endTime": start_timestamp + 3 * 60000,  # 3分钟后
+            "fill": "0",
+            "funcName": "mean",
+            "funcTime": "",
+            "measurement": "realData",
+            "objectCodes": object_codes,
+            "startTime": start_timestamp,
+        }
+
+        start_data = await loop.run_in_executor(
+            None, self._fetch_select_his_data, api_url, start_obj
+        )
+
+        if not start_data:
+            logger.error("❌ [%s] 获取开始时间电表读数失败", station_name)
+            return None
+
+        # 计算总能耗
+        # 参考export_service.py第218-230行的逻辑
+        total_consumption = 0.0
+        valid_count = 0
+
+        for data_code in data_codes:
+            for object_code in object_codes:
+                # 查找匹配的起始和结束读数
+                start_entry = next(
+                    (
+                        item
+                        for item in start_data
+                        if item.get("tags", {}).get("dataCode") == data_code
+                        and item.get("tags", {}).get("objectCode") == object_code
+                    ),
+                    None,
+                )
+                end_entry = next(
+                    (
+                        item
+                        for item in end_data
+                        if item.get("tags", {}).get("dataCode") == data_code
+                        and item.get("tags", {}).get("objectCode") == object_code
+                    ),
+                    None,
+                )
+
+                if not start_entry or not end_entry:
+                    continue
+
+                start_values = start_entry.get("values", [])
+                end_values = end_entry.get("values", [])
+                if not start_values or not end_values:
+                    continue
+
+                start_reading = self._safe_float(start_values[0].get("value"))
+                end_reading = self._safe_float(end_values[0].get("value"))
+                if start_reading is None or end_reading is None:
+                    logger.warning(
+                        "⚠️ [%s] 设备 %s/%s 读数无法解析: start=%s, end=%s",
+                        station_name,
+                        data_code,
+                        object_code,
+                        start_values[0].get("value"),
+                        end_values[0].get("value"),
+                    )
+                    continue
+
+                # 计算能耗差值
+                # 参考export_service.py第226-229行
+                difference = end_reading - start_reading
+                if difference >= -1:
+                    consumption = round(difference, 2)
+                    total_consumption += consumption
+                    valid_count += 1
+                    logger.debug(
+                        "📊 [%s] 设备 %s/%s: 起码=%.2f, 止码=%.2f, 耗电=%.2f kWh",
+                        station_name,
+                        data_code,
+                        object_code,
+                        start_reading,
+                        end_reading,
+                        consumption,
+                    )
+                else:
+                    logger.warning(
+                        "⚠️ [%s] 设备 %s/%s 电表异常: 起码=%.2f > 止码=%.2f",
+                        station_name,
+                        data_code,
+                        object_code,
+                        start_reading,
+                        end_reading,
+                    )
+
+                # 找到匹配的就跳出object_code循环
+                break
+
+        if valid_count > 0:
+            logger.info(
+                "📊 [%s] 能耗计算完成 - 有效设备数: %d/%d, 总能耗: %.2f kWh",
+                station_name,
+                valid_count,
+                len(data_codes),
+                total_consumption,
+            )
+            return round(total_consumption, 2)
+        logger.warning("⚠️ [%s] 没有有效的能耗数据", station_name)
+        return None
+
     def check_data_availability(self, station: Dict[str, Any]) -> bool:
         """
         检查站点是否能获取到真实数据
@@ -281,7 +504,7 @@ class RealtimeEnergyService:
         self, line_code: str, station_name: str
     ) -> Optional[Dict[str, Any]]:
         """从config_electricity.py获取站点的节能配置
-        
+
         注意：这里应该使用data_codes和object_codes数组来获取所有设备的能耗数据，
         而不是jienengfeijieneng节点（该节点仅用于获取节能状态）
         """
@@ -300,18 +523,14 @@ class RealtimeEnergyService:
             # 这样可以与导出功能保持一致，获取所有设备的实时功率
             data_codes = station_config.get("data_codes", [])
             object_codes = station_config.get("object_codes", [])
-            
+
             if not data_codes or not object_codes:
                 logger.warning(
-                    "站点 %s (线路 %s) 缺少data_codes或object_codes配置",
-                    station_name, line_code
+                    "站点 %s (线路 %s) 缺少data_codes或object_codes配置", station_name, line_code
                 )
                 return None
-            
-            return {
-                "data_codes": data_codes,
-                "object_codes": object_codes
-            }
+
+            return {"data_codes": data_codes, "object_codes": object_codes}
 
         except Exception as exc:
             logger.error("获取节能配置失败: %s", exc)

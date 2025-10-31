@@ -220,8 +220,33 @@ class EnergyService(CacheableService):
                 current_power = 0.0
                 data_source = "unavailable"
 
-            # 计算日能耗（基于当前功率的估算，不再叠加随机因素）
-            daily_consumption = current_power * 20  # 假设平均运行20小时/天
+            # 计算日能耗：使用与export_service相同的逻辑
+            # 获取当天的实际能耗（从当天00:00到现在的电表读数差值）
+            now = datetime.now()
+            start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+            daily_consumption = (
+                await self.realtime_service.get_station_energy_consumption(
+                    station, start_of_day, now
+                )
+            )
+
+            # 如果无法获取真实能耗，使用功率估算（向后兼容）
+            if daily_consumption is None:
+                daily_consumption = current_power * 20  # 假设平均运行20小时/天
+                if data_source == "real":
+                    data_source = "partial"  # 有功率但无能耗数据
+                    self.logger.warning(
+                        "⚠️ [%s] 能耗数据获取失败，使用功率估算: %.2f kWh",
+                        station_name,
+                        daily_consumption,
+                    )
+            else:
+                self.logger.info(
+                    "✅ [%s] 成功获取真实日能耗: %.2f kWh (使用电表读数计算)",
+                    station_name,
+                    daily_consumption,
+                )
 
             if data_source == "real":
                 self.logger.info(
@@ -232,7 +257,10 @@ class EnergyService(CacheableService):
                 )
             else:
                 self.logger.warning(
-                    "⚠️ [%s] 返回默认总览数据 - 当前功率: 0 kW, 日能耗: 0 kWh", station_name
+                    "⚠️ [%s] 返回部分/默认总览数据 - 当前功率: %.2f kW, 日能耗: %.2f kWh",
+                    station_name,
+                    current_power,
+                    daily_consumption,
                 )
 
             return {
