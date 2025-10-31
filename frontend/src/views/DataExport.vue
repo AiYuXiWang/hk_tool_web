@@ -616,7 +616,7 @@ function updateTaskProgress(taskStatus) {
 }
 
 // 处理任务完成
-function handleTaskComplete(taskStatus) {
+async function handleTaskComplete(taskStatus) {
   exporting.value = false
   
   if (taskStatus.status === 'completed') {
