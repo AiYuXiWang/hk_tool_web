@@ -408,7 +408,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import EnhancedExportForm from '@/components/enhanced/EnhancedExportForm.vue'
 import EnhancedProgressVisualization from '@/components/enhanced/EnhancedProgressVisualization.vue'
-import { exportElectricityData, exportSensorData, fetchLineConfigs, getTaskStatus, cancelTask as cancelExportTask } from '@/api/control'
+import { http, exportElectricityData, exportSensorData, fetchLineConfigs, getTaskStatus, cancelTask as cancelExportTask } from '@/api/control'
 
 // 接口定义
 interface ExportHistory {
@@ -879,20 +879,31 @@ function handleTaskComplete(status: any) {
   }, 1200)
 }
 
-function triggerDownload(filename: string) {
-  // 仅传文件名以匹配后端下载路由
+async function triggerDownload(filename: string) {
   const name = (filename || '').toString().split(/[\\\/]/).pop() || ''
   const url = `/api/download/${encodeURIComponent(name)}`
+
   try {
+    const response = await http.get(url, {
+      responseType: 'blob',
+      timeout: 60000,
+    })
+
+    const blob = new Blob([response.data])
+    const blobUrl = URL.createObjectURL(blob)
+
     const a = document.createElement('a')
-    a.href = url
+    a.href = blobUrl
     a.download = name
     a.style.display = 'none'
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
-  } catch {
-    window.open(url, '_blank')
+
+    URL.revokeObjectURL(blobUrl)
+  } catch (error: any) {
+    ElMessage.error(`下载失败: ${name}`)
+    console.error('下载文件失败', error)
   }
 }
 

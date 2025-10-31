@@ -322,7 +322,7 @@ import {
   Document, FolderOpened, InfoFilled, SuccessFilled, CircleCloseFilled,
   WarningFilled, ChatLineRound, DocumentRemove
 } from '@element-plus/icons-vue'
-import { exportElectricityData, exportSensorData, fetchLineConfigs, getTaskStatus, cancelTask } from '../api/control'
+import { http, exportElectricityData, exportSensorData, fetchLineConfigs, getTaskStatus, cancelTask } from '../api/control'
 
 // 导出配置
 const exportConfig = ref({
@@ -682,20 +682,40 @@ function handleTaskComplete(taskStatus) {
 }
 
 // 触发浏览器下载
-function triggerDownload(filename) {
+async function triggerDownload(filename) {
   try {
     // 仅传递文件名，适配后端下载路由
     const name = (filename || '').toString().split(/[\\\/]/).pop()
     const url = `/api/download/${encodeURIComponent(name)}`
+    
+    addLog(`📥 正在下载: ${name}`, 'info')
+    
+    // 使用 axios 获取文件 blob
+    const response = await http.get(url, {
+      responseType: 'blob',
+      timeout: 60000 // 60秒超时
+    })
+    
+    // 创建 blob URL
+    const blob = new Blob([response.data])
+    const blobUrl = URL.createObjectURL(blob)
+    
+    // 创建下载链接并触发下载
     const link = document.createElement('a')
-    link.href = url
+    link.href = blobUrl
     link.download = name
     document.body.appendChild(link)
     link.click()
+    
+    // 清理
     document.body.removeChild(link)
-    addLog(`📥 已开始下载: ${name}`, 'info')
+    URL.revokeObjectURL(blobUrl)
+    
+    addLog(`✅ 下载成功: ${name}`, 'success')
   } catch (e) {
-    addLog(`⚠️ 下载触发失败: ${e?.message || e}`, 'warning')
+    const name = (filename || '').toString().split(/[\\\/]/).pop()
+    addLog(`❌ 下载失败: ${name} - ${e?.message || e}`, 'error')
+    ElMessage.error(`下载失败: ${name}`)
   }
 }
 
