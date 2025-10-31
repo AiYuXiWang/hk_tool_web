@@ -129,17 +129,6 @@
           <!-- 操作按钮 -->
           <div class="action-buttons">
             <el-button 
-              type="primary" 
-              size="large"
-              :disabled="!isConfigValid"
-              @click="handlePreview"
-              :loading="previewLoading"
-              class="preview-btn"
-            >
-              <el-icon><View /></el-icon>
-              预览数据
-            </el-button>
-            <el-button 
               type="success" 
               size="large"
               :disabled="!isConfigValid"
@@ -206,44 +195,6 @@
           </div>
         </div>
       </el-card>
-
-        <!-- 数据预览卡片 -->
-        <el-card v-if="previewData.length > 0" class="preview-card" shadow="hover">
-          <template #header>
-            <div class="card-header">
-              <el-icon class="header-icon"><View /></el-icon>
-              <span class="header-title">数据预览</span>
-              <div class="preview-stats">
-                <el-tag type="info">{{ previewData.length }} 条记录</el-tag>
-              </div>
-            </div>
-          </template>
-          
-          <div class="preview-content">
-            <el-table 
-              :data="previewData.slice(0, 10)" 
-              size="small" 
-              stripe 
-              border
-              class="preview-table"
-              max-height="300"
-            >
-              <el-table-column 
-                v-for="column in previewColumns" 
-                :key="column.key"
-                :prop="column.key"
-                :label="column.title"
-                :width="column.width"
-                :align="column.align || 'left'"
-                show-overflow-tooltip
-              />
-            </el-table>
-            <div v-if="previewData.length > 10" class="preview-note">
-              <el-icon><InfoFilled /></el-icon>
-              仅显示前10条记录，完整数据请导出查看
-            </div>
-          </div>
-        </el-card>
 
         <!-- 导出历史卡片 -->
         <el-card class="history-card" shadow="hover">
@@ -403,7 +354,6 @@ const availableLines = computed(() => {
 
 // 导出状态
 const exporting = ref(false)
-const previewLoading = ref(false)
 const exportProgress = ref({
   show: false,
   percent: 0,
@@ -424,30 +374,6 @@ const downloadedFiles = new Set()
 // 异步任务状态
 const currentTaskId = ref('')
 const taskPollingInterval = ref(null)
-
-// 预览数据
-const previewData = ref([])
-const previewColumns = computed(() => {
-  if (exportConfig.value.dataType === 'electricity') {
-    return [
-      { key: 'timestamp', title: '时间', width: 180 },
-      { key: 'station_name', title: '车站', width: 120 },
-      { key: 'power', title: '功率(kW)', width: 100, align: 'right' },
-      { key: 'energy', title: '电量(kWh)', width: 100, align: 'right' },
-      { key: 'voltage', title: '电压(V)', width: 100, align: 'right' },
-      { key: 'current', title: '电流(A)', width: 100, align: 'right' }
-    ]
-  } else {
-    return [
-      { key: 'timestamp', title: '时间', width: 180 },
-      { key: 'station_name', title: '车站', width: 120 },
-      { key: 'sensor_type', title: '传感器类型', width: 120 },
-      { key: 'value', title: '数值', width: 100, align: 'right' },
-      { key: 'unit', title: '单位', width: 80 },
-      { key: 'status', title: '状态', width: 80 }
-    ]
-  }
-})
 
 // 导出历史
 const exportHistory = ref([])
@@ -503,34 +429,6 @@ function setTimePreset(preset) {
   const startUTC = nowUTC - preset.hours * 60 * 60 * 1000
   exportConfig.value.endTime = formatShanghai(new Date(nowUTC))
   exportConfig.value.startTime = formatShanghai(new Date(startUTC))
-}
-
-// 预览数据
-async function handlePreview() {
-  if (!isConfigValid.value) {
-    ElMessage.warning('请完善导出配置')
-    return
-  }
-  
-  previewLoading.value = true
-  addLog(`开始预览${exportConfig.value.dataType === 'electricity' ? '电耗' : '传感器'}数据...`, 'info')
-  
-  try {
-    // 模拟预览数据
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    
-    // 生成模拟数据
-    const mockData = generateMockData(exportConfig.value.dataType, 50)
-    previewData.value = mockData
-    
-    addLog(`预览数据加载完成，共 ${mockData.length} 条记录`, 'success')
-    ElMessage.success('数据预览加载完成')
-  } catch (error) {
-    addLog(`预览数据失败: ${error.message}`, 'error')
-    ElMessage.error('预览数据失败')
-  } finally {
-    previewLoading.value = false
-  }
 }
 
 // 开始导出
@@ -1185,14 +1083,10 @@ onUnmounted(() => {
   margin-top: 24px;
 }
 
-.preview-btn,
 .export-btn {
   flex: 1;
   height: 48px;
   font-weight: 600;
-}
-
-.export-btn {
   background: linear-gradient(135deg, #67c23a, #85ce61);
   border: none;
 }
@@ -1252,33 +1146,6 @@ onUnmounted(() => {
   margin-top: 8px;
   display: flex;
   gap: 8px;
-}
-
-/* 预览卡片 */
-.preview-card {
-  border-left: 4px solid #67c23a;
-}
-
-.preview-stats {
-  display: flex;
-  gap: 8px;
-}
-
-.preview-content {
-  max-height: 400px;
-  overflow: auto;
-}
-
-.preview-note {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 12px;
-  padding: 8px 12px;
-  background: #f0f9ff;
-  color: #409eff;
-  border-radius: 4px;
-  font-size: 12px;
 }
 
 /* 历史卡片 */
