@@ -614,15 +614,38 @@ async def cancel_task(task_id: str):
 async def download_file(filename: str):
     """下载导出的文件"""
     try:
+        # 安全处理：只允许文件名，防止路径遍历攻击
+        safe_filename = os.path.basename(filename)
+
+        # 在当前工作目录查找文件
+        file_path = os.path.join(os.getcwd(), safe_filename)
+
         # 检查文件是否存在
-        if not os.path.exists(filename):
-            raise HTTPException(status_code=404, detail=f"文件 {filename} 不存在")
+        if not os.path.exists(file_path):
+            logger.warning(f"文件不存在: {file_path}")
+            raise HTTPException(status_code=404, detail=f"文件 {safe_filename} 不存在")
+
+        # 确定文件类型
+        if file_path.endswith(".csv"):
+            media_type = "text/csv"
+        elif file_path.endswith(".json"):
+            media_type = "application/json"
+        elif file_path.endswith(".xlsx"):
+            media_type = (
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+        elif file_path.endswith(".xls"):
+            media_type = "application/vnd.ms-excel"
+        else:
+            media_type = "application/octet-stream"
+
+        logger.info(f"开始下载文件: {file_path}")
 
         # 返回文件响应
         return FileResponse(
-            path=filename,
-            filename=filename,
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            path=file_path,
+            filename=safe_filename,
+            media_type=media_type,
         )
     except HTTPException:
         raise
