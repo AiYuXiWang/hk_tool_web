@@ -98,23 +98,7 @@
             :available-lines="availableLines"
             :loading="exporting"
             @export="handleExport"
-            @preview="handlePreview"
             @save-template="handleSaveTemplate"
-          />
-        </div>
-
-        <!-- 智能预览区域 -->
-        <div v-if="showPreview" class="workspace-section preview-section">
-          <SmartDataPreview
-            :data="previewData"
-            :columns="previewColumns"
-            :loading="previewLoading"
-            :total-records="totalPreviewRecords"
-            :estimated-size="estimatedPreviewSize"
-            :data-quality="dataQuality"
-            @close="closePreview"
-            @refresh="refreshPreview"
-            @export="exportPreviewData"
           />
         </div>
       </div>
@@ -423,7 +407,6 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import EnhancedExportForm from '@/components/enhanced/EnhancedExportForm.vue'
-import SmartDataPreview from '@/components/enhanced/SmartDataPreview.vue'
 import EnhancedProgressVisualization from '@/components/enhanced/EnhancedProgressVisualization.vue'
 import { exportElectricityData, exportSensorData, fetchLineConfigs, getTaskStatus, cancelTask as cancelExportTask } from '@/api/control'
 
@@ -474,12 +457,6 @@ interface ExportTemplate {
 const exportFormRef = ref()
 const availableLines = ref<string[]>([])
 const exporting = ref(false)
-const showPreview = ref(false)
-const previewLoading = ref(false)
-const previewData = ref<any[]>([])
-const totalPreviewRecords = ref(0)
-const estimatedPreviewSize = ref('')
-const dataQuality = ref<any>(null)
 const showProgress = ref(false)
 const currentTaskId = ref<string | null>(null)
 let pollingTimer: number | null = null
@@ -544,20 +521,6 @@ const historyTabs = computed(() => [
     count: downloadedFiles.value.length
   }
 ])
-
-const previewColumns = computed(() => {
-  // 根据数据类型返回不同的列配置
-  if (previewData.value.length > 0) {
-    const firstRow = previewData.value[0]
-    return Object.keys(firstRow).map(key => ({
-      key,
-      title: key,
-      type: typeof firstRow[key] === 'number' ? 'number' : 'string',
-      sortable: true
-    }))
-  }
-  return []
-})
 
 // 方法
 const initializeApp = async () => {
@@ -737,89 +700,6 @@ const updateStageProgress = async (start: number, end: number, duration: number,
 
     await new Promise(resolve => setTimeout(resolve, stepDuration))
   }
-}
-
-const handlePreview = async (data: any) => {
-  showPreview.value = true
-  previewLoading.value = true
-
-  try {
-    // 模拟预览数据加载
-    await new Promise(resolve => setTimeout(resolve, 1500))
-
-    // 生成模拟预览数据
-    previewData.value = generateMockPreviewData(data.dataType, 100)
-    totalPreviewRecords.value = 1250
-    estimatedPreviewSize.value = '~1.2 MB'
-
-    // 模拟数据质量检查
-    dataQuality.value = {
-      score: 94,
-      completeness: 96,
-      accuracy: 92,
-      consistency: 95,
-      issues: [
-        { id: '1', message: '发现5条异常电耗数据', severity: 'medium', count: 5 },
-        { id: '2', message: '部分时间戳格式不统一', severity: 'low', count: 12 }
-      ]
-    }
-
-  } catch (error) {
-    showError('预览失败', error.message)
-  } finally {
-    previewLoading.value = false
-  }
-}
-
-const generateMockPreviewData = (dataType: string, count: number) => {
-  const data = []
-  const now = new Date()
-
-  for (let i = 0; i < count; i++) {
-    const timestamp = new Date(now.getTime() - i * 60000).toISOString().slice(0, 19).replace('T', ' ')
-
-    if (dataType === 'electricity') {
-      data.push({
-        timestamp,
-        station_name: `车站${(i % 10) + 1}`,
-        power: (Math.random() * 1000).toFixed(2),
-        energy: (Math.random() * 5000).toFixed(2),
-        voltage: (220 + Math.random() * 20).toFixed(1),
-        current: (Math.random() * 100).toFixed(2),
-        status: Math.random() > 0.1 ? '正常' : '异常'
-      })
-    } else {
-      data.push({
-        timestamp,
-        station_name: `车站${(i % 10) + 1}`,
-        sensor_type: ['温度', '湿度', '压力'][i % 3],
-        value: (Math.random() * 100).toFixed(2),
-        unit: ['°C', '%', 'Pa'][i % 3],
-        status: Math.random() > 0.1 ? '正常' : '异常'
-      })
-    }
-  }
-
-  return data
-}
-
-const closePreview = () => {
-  showPreview.value = false
-  previewData.value = []
-  dataQuality.value = null
-}
-
-const refreshPreview = () => {
-  // 重新加载预览数据
-  if (exportFormRef.value) {
-    const formData = exportFormRef.value.getFormData()
-    handlePreview(formData)
-  }
-}
-
-const exportPreviewData = () => {
-  // 导出预览数据
-  ElMessage.info('导出预览数据功能开发中')
 }
 
 const handleSaveTemplate = (data: any) => {
@@ -1471,11 +1351,6 @@ onMounted(() => {
   border-radius: 12px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
   overflow: hidden;
-}
-
-.preview-section {
-  max-height: 600px;
-  overflow-y: auto;
 }
 
 /* 进度区域 */

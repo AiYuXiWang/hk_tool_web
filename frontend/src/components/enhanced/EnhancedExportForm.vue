@@ -493,7 +493,6 @@ const props = withDefaults(defineProps<Props>(), {
 // Emits
 interface Emits {
   (e: 'export', data: FormData): void
-  (e: 'preview', data: FormData): void
   (e: 'save-template', data: FormData): void
 }
 

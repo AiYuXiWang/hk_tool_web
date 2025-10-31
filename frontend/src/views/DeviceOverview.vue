@@ -880,11 +880,31 @@ function exportCSV() {
 .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
 .section-title { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 16px; font-weight: 600; color: var(--color-text-primary); }
 .table-container { flex: 1; overflow: hidden; border-radius: 8px; border: 1px solid var(--color-border-secondary); }
-.code-text { font-family: monospace; font-size: 12px; background: var(--color-background-tertiary); padding: 2px 6px; border-radius: 4px; }
+.code-text { font-family: monospace; font-size: 12px; background: var(--color-background-tertiary); padding: 2px 6px; border-radius: 4px; color: var(--color-text-primary); }
 .quick-write { display: flex; align-items: center; gap: 8px; justify-content: center; }
 .quick-input { width: 100px; }
 .write-btn { min-width: 60px; }
+/* 数据表格样式 */
+.value-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.value-text {
+  color: var(--color-text-primary);
+  font-weight: 500;
+}
+
+.unit-text {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
 /* 批量命令样式 */
 .batch-toolbar { display: flex; gap: 8px; margin-bottom: 12px; }
 .drawer-table { --el-table-bg-color: var(--color-background-primary); }
+.error-text { color: var(--color-danger); }
+.text-muted { color: var(--color-text-secondary); }
 </style>
