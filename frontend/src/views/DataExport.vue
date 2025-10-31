@@ -370,6 +370,7 @@ const hasPartialSuccess = computed(() => failedStations.value.length > 0 && part
 
 // 已下载文件去重集合（非响应式）
 const downloadedFiles = new Set()
+const downloadingFiles = new Set()
 
 // 异步任务状态
 const currentTaskId = ref('')
@@ -466,6 +467,7 @@ async function handleExport() {
   failedStations.value = []
   showFailureDialog.value = false
   downloadedFiles.clear()
+  downloadingFiles.clear()
   
   const params = {
     line: exportConfig.value.line,
@@ -560,13 +562,10 @@ function startTaskPolling() {
         const newlySucceeded = taskStatus.result.details.results
           .filter(s => s.success && s.file_path)
           .map(s => s.file_path)
-          .filter(fp => fp && !downloadedFiles.has(fp))
+          .filter(fp => fp)
 
         for (const fp of newlySucceeded) {
-          // 先标记再触发，避免并发重复
-          downloadedFiles.add(fp)
-          addLog(`📥 进度中下载成功文件: ${fp}`, 'info')
-          triggerDownload(fp)
+          await triggerDownload(fp)
         }
       }
       updateTaskProgress(taskStatus)
@@ -644,21 +643,18 @@ function handleTaskComplete(taskStatus) {
         partialFiles.value = successes.map(s => s.file_path)
         failedStations.value = failures.map(s => ({ station_name: s.station_name, station_ip: s.station_ip, message: s.message }))
 
-        details.results.forEach(station => {
+        for (const station of details.results) {
           if (station.success) {
             addLog(`✓ ${station.station_name} (${station.station_ip}): 导出成功`, 'success')
             if (station.file_path) {
               addLog(`└─ 文件: ${station.file_path}`, 'info')
-              // 完成阶段也仅在未下载过时触发
-              if (!downloadedFiles.has(station.file_path)) {
-                downloadedFiles.add(station.file_path)
-                triggerDownload(station.file_path)
-              }
+              // 完成阶段确保所有成功文件已下载
+              await triggerDownload(station.file_path)
             }
           } else {
             addLog(`❌ ${station.station_name} (${station.station_ip}): ${station.message}`, 'error')
           }
-        })
+        }
       }
     } else {
       addToHistory(true)
@@ -679,43 +675,69 @@ function handleTaskComplete(taskStatus) {
     exportProgress.value.show = false
   }, 3000)
   downloadedFiles.clear()
+  downloadingFiles.clear()
 }
 
 // 触发浏览器下载
-async function triggerDownload(filename) {
+async function triggerDownload(filename, options = {}) {
+  const key = (filename || '').toString()
+  const name = key.split(/[\\\/]/).pop()
+  const force = Boolean(options.force)
+
+  if (!name) {
+    addLog('❌ 下载失败: 文件名无效', 'error')
+    return false
+  }
+
+  if (!force && downloadedFiles.has(name)) {
+    addLog(`⏭️ 已下载过，跳过: ${name}`, 'info')
+    return true
+  }
+
+  if (!force && downloadingFiles.has(name)) {
+    addLog(`⏳ 正在下载中，跳过重复请求: ${name}`, 'info')
+    return false
+  }
+
+  if (!force) {
+    downloadingFiles.add(name)
+  }
+
   try {
-    // 仅传递文件名，适配后端下载路由
-    const name = (filename || '').toString().split(/[\\\/]/).pop()
     const url = `/api/download/${encodeURIComponent(name)}`
-    
     addLog(`📥 正在下载: ${name}`, 'info')
-    
+
     // 使用 axios 获取文件 blob
     const response = await http.get(url, {
       responseType: 'blob',
       timeout: 60000 // 60秒超时
     })
-    
+
     // 创建 blob URL
     const blob = new Blob([response.data])
     const blobUrl = URL.createObjectURL(blob)
-    
+
     // 创建下载链接并触发下载
     const link = document.createElement('a')
     link.href = blobUrl
     link.download = name
     document.body.appendChild(link)
     link.click()
-    
+
     // 清理
     document.body.removeChild(link)
     URL.revokeObjectURL(blobUrl)
-    
+
     addLog(`✅ 下载成功: ${name}`, 'success')
+    downloadedFiles.add(name)
+    return true
   } catch (e) {
-    const name = (filename || '').toString().split(/[\\\/]/).pop()
     addLog(`❌ 下载失败: ${name} - ${e?.message || e}`, 'error')
     ElMessage.error(`下载失败: ${name}`)
+    downloadedFiles.delete(name)
+    return false
+  } finally {
+    downloadingFiles.delete(name)
   }
 }
 
@@ -806,7 +828,7 @@ function exportLogsToFile() {
 // 下载文件
 function downloadFile(filePath) {
   addLog(`开始下载文件: ${filePath}`, 'info')
-  triggerDownload(filePath)
+  triggerDownload(filePath, { force: true })
 }
 
 // 下载成功部分
@@ -817,7 +839,7 @@ async function downloadPartial() {
   }
   addLog(`批量下载成功部分，共 ${partialFiles.value.length} 个文件`, 'info')
   for (const file of partialFiles.value) {
-    triggerDownload(file)
+    await triggerDownload(file, { force: true })
     await new Promise(r => setTimeout(r, 300))
   }
 }
