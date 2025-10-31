@@ -211,10 +211,10 @@
 }
 
 .el-table th {
-  background-color: rgba(14, 23, 51, 0.6);
-  color: #ffffff;
+  background-color: var(--color-background-secondary);
+  color: var(--color-text-primary);
   font-weight: 600;
-  border-color: rgba(0, 212, 255, 0.2);
+  border-color: var(--color-border-secondary);
 }
 
 .el-table td {
