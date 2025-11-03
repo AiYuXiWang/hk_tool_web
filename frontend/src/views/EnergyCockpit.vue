@@ -64,39 +64,8 @@
         title="总能耗"
         :value="kpi.total_kwh_today || 0"
         unit="kWh"
-        :trend="{ type: 'up', value: 5.2, icon: 'icon-trending-up' }"
         icon="icon-zap"
         variant="primary"
-        :loading="kpiLoading"
-      />
-      
-      <EnergyKpiCard
-        title="实时功率"
-        :value="kpi.current_kw || 0"
-        unit="kW"
-        :trend="{ type: 'down', value: 2.1, icon: 'icon-trending-down' }"
-        icon="icon-activity"
-        variant="success"
-        :loading="kpiLoading"
-      />
-      
-      <EnergyKpiCard
-        title="峰值功率"
-        :value="kpi.peak_kw || 0"
-        unit="kW"
-        :trend="{ type: 'up', value: 8.3, icon: 'icon-trending-up' }"
-        icon="icon-trending-up"
-        variant="info"
-        :loading="kpiLoading"
-      />
-      
-      <EnergyKpiCard
-        title="监控车站"
-        :value="kpi.station_count || 0"
-        unit="个"
-        :trend="{ type: 'stable', value: 0, icon: 'icon-minus' }"
-        icon="icon-map-pin"
-        variant="warning"
         :loading="kpiLoading"
       />
 
@@ -480,21 +449,9 @@ async function refreshRealtime() {
       }))
     }]
   } catch (error) {
-    console.warn('实时数据获取失败，使用示例数据:', error)
-    const dataPoints = rangeHours
-    realtimeData.value = [{
-      type: 'line',
-      title: '实时能耗',
-      data: Array.from({ length: dataPoints }, () => Math.round(100 + Math.random() * 50)),
-      xAxis: Array.from({ length: dataPoints }, (_, i) => `${i}:00`),
-      series: [{
-        name: '功率',
-        type: 'line',
-        data: Array.from({ length: dataPoints }, () => Math.round(100 + Math.random() * 50)),
-        smooth: true,
-        color: '#409EFF'
-      }]
-    }]
+    console.error('实时数据获取失败:', error)
+    ElMessage.error('实时数据获取失败')
+    realtimeData.value = []
     updateDataSource('unavailable')
   } finally {
     realtimeLoading.value = false
@@ -523,16 +480,10 @@ async function refreshClassification() {
       data: vals || [],
       xAxis: cats || []
     }]
-  } catch {
-    ElMessage.warning('分类数据获取失败，显示示例数据')
-    const cats = ['冷机', '水泵', '冷却塔', '照明', '其他']
-    const vals = cats.map(() => Math.round(500 + Math.random() * 300))
-    classificationData.value = [{
-      type: 'pie',
-      title: '分类分项能耗',
-      data: vals,
-      xAxis: cats
-    }]
+  } catch (error) {
+    console.error('分类数据获取失败:', error)
+    ElMessage.error('分类数据获取失败')
+    classificationData.value = []
   } finally {
     classificationLoading.value = false
   }
@@ -549,9 +500,10 @@ async function refreshCompare() {
       ...getTimeRangeParams()
     })
     compareData.value = data || null
-  } catch {
-    // 示例数据：当前周期能耗与同比/环比百分比
-    compareData.value = { yoy_percent: (Math.random() * 20 - 10), mom_percent: (Math.random() * 20 - 10), current_kwh: Math.round(12000 + Math.random() * 3000) }
+  } catch (error) {
+    console.error('同比环比数据获取失败:', error)
+    ElMessage.error('同比环比数据获取失败')
+    compareData.value = null
   } finally {
     compareLoading.value = false
   }
@@ -579,21 +531,10 @@ async function refreshTrend() {
         color: '#67C23A'
       }]
     }]
-  } catch {
-    ElMessage.warning('趋势数据获取失败，显示示例数据')
-    const dataPoints = Math.max(1, Math.min(getRangeDurationHours(), 240))
-    historyData.value = [{
-      type: 'bar',
-      title: '历史趋势',
-      data: Array.from({ length: dataPoints }, () => Math.round(50 + Math.random() * 30)),
-      xAxis: Array.from({ length: dataPoints }, (_, i) => `${i}:00`),
-      series: [{
-        name: '耗电量',
-        type: 'bar',
-        data: Array.from({ length: dataPoints }, () => Math.round(50 + Math.random() * 30)),
-        color: '#67C23A'
-      }]
-    }]
+  } catch (error) {
+    console.error('趋势数据获取失败:', error)
+    ElMessage.error('趋势数据获取失败')
+    historyData.value = []
   } finally {
     trendLoading.value = false
   }
@@ -606,12 +547,11 @@ async function refreshKpi() {
   try {
     const data = await fetchEnergyKpi({ line: selectedLine.value, station_ip: selectedStation.value })
     kpi.value = data
-  } catch {
+  } catch (error) {
+    console.error('KPI数据获取失败:', error)
+    ElMessage.error('KPI数据获取失败')
     kpi.value = {
-      total_kwh_today: 12850.4,
-      current_kw: 432.2,
-      peak_kw: 680.5,
-      station_count: stationsOfSelectedLine.value.length,
+      total_kwh_today: 0
     }
   } finally {
     kpiLoading.value = false

@@ -393,6 +393,25 @@ class EnergyService(CacheableService):
                 ", ".join(item["station_name"] for item in unavailable_stations),
             )
 
+        # 计算趋势百分比，避免除以零
+        consumption_percentage = 0.0
+        if yesterday_consumption > 0:
+            consumption_percentage = round(
+                abs(
+                    (total_consumption - yesterday_consumption)
+                    / yesterday_consumption
+                    * 100
+                ),
+                1,
+            )
+
+        power_percentage = 0.0
+        if last_hour_power > 0:
+            power_percentage = round(
+                abs((current_power - last_hour_power) / last_hour_power * 100),
+                1,
+            )
+
         return {
             "total_consumption": round(total_consumption, 1),
             "current_power": round(current_power, 1),
@@ -403,23 +422,13 @@ class EnergyService(CacheableService):
                     "direction": "positive"
                     if total_consumption > yesterday_consumption
                     else "negative",
-                    "percentage": round(
-                        abs(
-                            (total_consumption - yesterday_consumption)
-                            / yesterday_consumption
-                            * 100
-                        ),
-                        1,
-                    ),
+                    "percentage": consumption_percentage,
                 },
                 "power_trend": {
                     "direction": "negative"
                     if current_power < last_hour_power
                     else "positive",
-                    "percentage": round(
-                        abs((current_power - last_hour_power) / last_hour_power * 100),
-                        1,
-                    ),
+                    "percentage": power_percentage,
                 },
                 "efficiency_trend": {"direction": "positive", "percentage": 3.5},
             },
@@ -605,6 +614,188 @@ class EnergyService(CacheableService):
                 "end": end_date.strftime("%Y-%m-%d"),
             },
         }
+
+    async def get_comparison_data(
+        self,
+        start_time: datetime,
+        end_time: datetime,
+        station_ip: Optional[str] = None,
+        line: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        获取同比环比对比数据
+
+        Args:
+            start_time: 当前周期开始时间
+            end_time: 当前周期结束时间
+            station_ip: 可选的站点IP过滤
+
+        Returns:
+            包含同比(yoy)、环比(mom)百分比和当前能耗的字典
+        """
+        try:
+            stations = await self._get_stations(station_ip, line)
+            if not stations:
+                raise ValueError("未找到站点配置")
+
+            # 计算时间跨度
+            time_diff = end_time - start_time
+
+            # 并行获取当前周期、去年同期、上一周期的能耗数据
+            current_tasks = [
+                self.realtime_service.get_station_energy_consumption(
+                    station, start_time, end_time
+                )
+                for station in stations
+            ]
+
+            # 去年同期（同比）
+            year_delta = timedelta(days=365)
+            yoy_start = start_time - year_delta
+            yoy_end = end_time - year_delta
+            yoy_tasks = [
+                self.realtime_service.get_station_energy_consumption(
+                    station, yoy_start, yoy_end
+                )
+                for station in stations
+            ]
+
+            # 上一周期（环比）- 向前推同样的时间跨度
+            mom_end = start_time
+            mom_start = start_time - time_diff
+            mom_tasks = [
+                self.realtime_service.get_station_energy_consumption(
+                    station, mom_start, mom_end
+                )
+                for station in stations
+            ]
+
+            # 执行所有任务
+            current_results = await asyncio.gather(
+                *current_tasks, return_exceptions=True
+            )
+            yoy_results = await asyncio.gather(*yoy_tasks, return_exceptions=True)
+            mom_results = await asyncio.gather(*mom_tasks, return_exceptions=True)
+
+            # 过滤有效结果
+            current_consumptions = [
+                r
+                for r in current_results
+                if not isinstance(r, Exception) and r is not None
+            ]
+            yoy_consumptions = [
+                r for r in yoy_results if not isinstance(r, Exception) and r is not None
+            ]
+            mom_consumptions = [
+                r for r in mom_results if not isinstance(r, Exception) and r is not None
+            ]
+
+            # 计算总能耗
+            current_kwh = sum(current_consumptions) if current_consumptions else 0
+            yoy_kwh = sum(yoy_consumptions) if yoy_consumptions else 0
+            mom_kwh = sum(mom_consumptions) if mom_consumptions else 0
+
+            # 计算百分比变化
+            yoy_percent = 0.0
+            if yoy_kwh > 0:
+                yoy_percent = ((current_kwh - yoy_kwh) / yoy_kwh) * 100
+
+            mom_percent = 0.0
+            if mom_kwh > 0:
+                mom_percent = ((current_kwh - mom_kwh) / mom_kwh) * 100
+
+            self.logger.info(
+                "同比环比数据计算完成 - 当前能耗: %.1f kWh, 同比: %.1f%%, 环比: %.1f%%",
+                current_kwh,
+                yoy_percent,
+                mom_percent,
+            )
+
+            return self.format_response(
+                {
+                    "current_kwh": round(current_kwh, 1),
+                    "yoy_percent": round(yoy_percent, 1),
+                    "mom_percent": round(mom_percent, 1),
+                    "yoy_kwh": round(yoy_kwh, 1),
+                    "mom_kwh": round(mom_kwh, 1),
+                    "station_count": len(stations),
+                    "valid_data_count": len(current_consumptions),
+                },
+                "同比环比数据获取成功",
+            )
+
+        except Exception as e:
+            self.log_error("get_comparison_data", e, station_ip=station_ip)
+            return self.format_error_response(f"获取同比环比数据失败: {str(e)}")
+
+    async def get_trend_series(
+        self,
+        start_time: datetime,
+        end_time: datetime,
+        station_ip: Optional[str] = None,
+        line: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """获取指定时间范围内的能耗趋势数据"""
+        try:
+            if start_time >= end_time:
+                raise ValueError("开始时间必须早于结束时间")
+
+            stations = await self._get_stations(station_ip, line)
+            if not stations:
+                raise ValueError("未找到站点配置")
+
+            total_seconds = (end_time - start_time).total_seconds()
+            if total_seconds <= 0:
+                raise ValueError("时间范围无效")
+
+            if total_seconds <= 48 * 3600:
+                step = timedelta(hours=1)
+                time_format = "%m-%d %H:%M"
+                granularity = "hourly"
+            else:
+                step = timedelta(days=1)
+                time_format = "%Y-%m-%d"
+                granularity = "daily"
+
+            timestamps: List[str] = []
+            values: List[float] = []
+            valid_points = 0
+
+            current_start = start_time
+            while current_start < end_time:
+                current_end = min(current_start + step, end_time)
+                tasks = [
+                    self.realtime_service.get_station_energy_consumption(
+                        station, current_start, current_end
+                    )
+                    for station in stations
+                ]
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+                consumptions = [
+                    r for r in results if not isinstance(r, Exception) and r is not None
+                ]
+                total_consumption = sum(consumptions) if consumptions else 0.0
+                if consumptions:
+                    valid_points += 1
+
+                timestamps.append(current_start.strftime(time_format))
+                values.append(round(total_consumption, 1))
+
+                current_start = current_end
+
+            return self.format_response(
+                {
+                    "timestamps": timestamps,
+                    "values": values,
+                    "granularity": granularity,
+                    "station_count": len(stations),
+                    "valid_points": valid_points,
+                },
+                "趋势数据获取成功",
+            )
+        except Exception as e:
+            self.log_error("get_trend_series", e, station_ip=station_ip, line=line)
+            return self.format_error_response(f"获取趋势数据失败: {str(e)}")
 
     async def _calculate_kpi_metrics(
         self, stations: List[Dict[str, Any]]

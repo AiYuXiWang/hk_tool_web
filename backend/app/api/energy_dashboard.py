@@ -133,137 +133,10 @@ async def get_history_data(
     x_station_ip: Optional[str] = Header(None, alias="X-Station-Ip"),
 ):
     """
-    获取历史数据趋势分析
+    获取历史数据趋势分析 - 已废弃，请使用 /trend 接口
     """
-    try:
-        import random
-
-        # 简化实现，直接生成模拟数据
-        station_count = 3  # 默认站点数量
-
-        now = datetime.now()
-
-        # 根据时间范围生成数据
-        if time_range == "24h":
-            # 24小时数据，每小时一个点
-            data_points = []
-            for i in range(24):
-                time_point = now - timedelta(hours=23 - i)
-                power = sum(random.uniform(400, 700) for _ in range(station_count))
-                energy = power * random.uniform(0.9, 1.1)
-                efficiency = random.uniform(0.75, 0.95)
-                data_points.append(
-                    {
-                        "time": time_point.strftime("%H:%M"),
-                        "datetime": time_point.isoformat(),
-                        "power": round(power, 1),
-                        "energy": round(energy, 1),
-                        "efficiency": round(efficiency * 100, 1),
-                    }
-                )
-
-        elif time_range == "7d":
-            # 7天数据，每天一个点
-            data_points = []
-            for i in range(7):
-                time_point = now - timedelta(days=6 - i)
-                power = sum(random.uniform(500, 800) for _ in range(station_count))
-                energy = power * 24 * random.uniform(0.8, 1.2)  # 日能耗
-                efficiency = random.uniform(0.8, 0.95)
-                data_points.append(
-                    {
-                        "time": time_point.strftime("%m-%d"),
-                        "datetime": time_point.isoformat(),
-                        "power": round(power, 1),
-                        "energy": round(energy, 1),
-                        "efficiency": round(efficiency * 100, 1),
-                    }
-                )
-
-        elif time_range == "30d":
-            # 30天数据，每天一个点
-            data_points = []
-            for i in range(30):
-                time_point = now - timedelta(days=29 - i)
-                power = sum(random.uniform(450, 750) for _ in range(station_count))
-                energy = power * 24 * random.uniform(0.85, 1.15)
-                efficiency = random.uniform(0.78, 0.92)
-                data_points.append(
-                    {
-                        "time": time_point.strftime("%m-%d"),
-                        "datetime": time_point.isoformat(),
-                        "power": round(power, 1),
-                        "energy": round(energy, 1),
-                        "efficiency": round(efficiency * 100, 1),
-                    }
-                )
-
-        elif time_range == "90d":
-            # 90天数据，每3天一个点
-            data_points = []
-            for i in range(30):  # 30个点，每个点代表3天
-                time_point = now - timedelta(days=89 - i * 3)
-                power = sum(random.uniform(400, 800) for _ in range(station_count))
-                energy = power * 24 * 3 * random.uniform(0.8, 1.2)  # 3天能耗
-                efficiency = random.uniform(0.75, 0.95)
-                data_points.append(
-                    {
-                        "time": time_point.strftime("%m-%d"),
-                        "datetime": time_point.isoformat(),
-                        "power": round(power, 1),
-                        "energy": round(energy, 1),
-                        "efficiency": round(efficiency * 100, 1),
-                    }
-                )
-
-        else:
-            # 默认返回24h数据
-            data_points = []
-            for i in range(24):
-                time_point = now - timedelta(hours=23 - i)
-                power = sum(random.uniform(400, 700) for _ in range(station_count))
-                energy = power * random.uniform(0.9, 1.1)
-                efficiency = random.uniform(0.75, 0.95)
-                data_points.append(
-                    {
-                        "time": time_point.strftime("%H:%M"),
-                        "datetime": time_point.isoformat(),
-                        "power": round(power, 1),
-                        "energy": round(energy, 1),
-                        "efficiency": round(efficiency * 100, 1),
-                    }
-                )
-
-        # 计算统计数据
-        total_energy = sum(point["energy"] for point in data_points)
-        avg_power = sum(point["power"] for point in data_points) / len(data_points)
-        avg_efficiency = sum(point["efficiency"] for point in data_points) / len(
-            data_points
-        )
-
-        # 计算同比数据（模拟）
-        energy_change = random.uniform(-15, 25)  # 同比变化百分比
-        power_change = random.uniform(-10, 20)
-        efficiency_change = random.uniform(-5, 15)
-
-        return {
-            "time_range": time_range,
-            "data_points": data_points,
-            "statistics": {
-                "total_energy": round(total_energy, 1),
-                "avg_power": round(avg_power, 1),
-                "avg_efficiency": round(avg_efficiency, 1),
-                "energy_change": round(energy_change, 1),
-                "power_change": round(power_change, 1),
-                "efficiency_change": round(efficiency_change, 1),
-            },
-            "total_stations": station_count,
-            "update_time": datetime.now().isoformat(),
-        }
-
-    except Exception as e:
-        logger.error(f"获取历史数据失败: {e}")
-        raise HTTPException(status_code=500, detail=f"获取历史数据失败: {str(e)}")
+    logger.warning("调用了已废弃的 /history 接口，请使用 /trend 接口")
+    raise HTTPException(status_code=410, detail="此接口已废弃，请使用 /trend 接口获取历史数据")
 
 
 @router.get("/trend")
@@ -276,6 +149,7 @@ async def get_trend_data(
     start_time: Optional[str] = Query(None, description="开始时间 YYYY-MM-DD HH:mm:ss"),
     end_time: Optional[str] = Query(None, description="结束时间 YYYY-MM-DD HH:mm:ss"),
     x_station_ip: Optional[str] = Header(None, alias="X-Station-Ip"),
+    energy_service: EnergyService = Depends(get_energy_service),
 ):
     """
     获取历史趋势分析数据
@@ -283,27 +157,10 @@ async def get_trend_data(
     返回格式: { values: [], timestamps: [] }
     """
     try:
-        # 确定站点IP
         target_station_ip = station_ip or x_station_ip
-
-        # 获取站点列表
-        stations = []
-        if target_station_ip:
-            station_config = electricity_config.get_station_by_ip(target_station_ip)
-            if station_config:
-                stations = [station_config]
-        elif line:
-            stations = electricity_config.get_stations_by_line(line)
-        else:
-            stations = electricity_config.get_all_stations()
-
-        station_count = len(stations) if stations else 1
-
-        # 解析时间范围
         now = datetime.now()
 
         if start_time and end_time:
-            # 使用自定义时间范围
             try:
                 start_dt = datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S")
                 end_dt = datetime.strptime(end_time, "%Y-%m-%d %H:%M:%S")
@@ -311,92 +168,43 @@ async def get_trend_data(
                 raise HTTPException(
                     status_code=400, detail="时间格式错误，应为 YYYY-MM-DD HH:mm:ss"
                 )
-
-            if start_dt >= end_dt:
-                raise HTTPException(status_code=400, detail="开始时间必须早于结束时间")
-
-            # 计算时间跨度
-            time_diff = end_dt - start_dt
-            total_hours = time_diff.total_seconds() / 3600
-
-            # 根据时间跨度确定数据点数和格式
-            if total_hours <= 24:
-                # 小于等于24小时，按小时展示
-                data_points = int(total_hours)
-                time_format = "%H:00"
-                base_value = station_count * 150
-            elif total_hours <= 24 * 7:
-                # 7天内，按小时展示
-                data_points = int(total_hours)
-                time_format = "%m-%d %H:00"
-                base_value = station_count * 150
-            elif total_hours <= 24 * 90:
-                # 90天内，按天展示
-                data_points = int(total_hours / 24)
-                time_format = "%m-%d"
-                base_value = station_count * 3500
-            else:
-                # 超过90天，按天展示但限制数据点
-                data_points = 90
-                time_format = "%m-%d"
-                base_value = station_count * 3500
-
-            # 限制最大数据点数量
-            data_points = min(data_points, 240)
-
         elif period:
-            # 使用预设周期（向后兼容）
             if period == "24h":
-                data_points = 24
-                time_format = "%H:00"
-                base_value = station_count * 150
                 start_dt = now - timedelta(hours=24)
                 end_dt = now
             elif period == "7d":
-                data_points = 7
-                time_format = "%m-%d"
-                base_value = station_count * 3500
                 start_dt = now - timedelta(days=7)
                 end_dt = now
             elif period == "30d":
-                data_points = 30
-                time_format = "%m-%d"
-                base_value = station_count * 3500
                 start_dt = now - timedelta(days=30)
                 end_dt = now
             else:
                 raise HTTPException(status_code=400, detail="不支持的时间周期")
         else:
-            # 默认24小时
-            data_points = 24
-            time_format = "%H:00"
-            base_value = station_count * 150
             start_dt = now - timedelta(hours=24)
             end_dt = now
 
-        # 生成时间序列和数据
-        timestamps = []
-        values = []
+        result = await energy_service.get_trend_series(
+            start_dt, end_dt, target_station_ip, line
+        )
 
-        time_step = (end_dt - start_dt) / data_points
+        if not result.get("success"):
+            raise HTTPException(
+                status_code=result.get("code", 500),
+                detail=result.get("error", "获取趋势数据失败"),
+            )
 
-        for i in range(data_points):
-            time_point = start_dt + time_step * i
-            timestamps.append(time_point.strftime(time_format))
-
-            # 模拟能耗数据，加入随机波动和趋势
-            trend_factor = 1.0 - (i / data_points) * 0.1  # 轻微下降趋势（节能效果）
-            random_factor = random.uniform(0.85, 1.15)
-            value = base_value * trend_factor * random_factor
-            values.append(round(value, 1))
+        data = result.get("data", {})
 
         return {
-            "values": values,
-            "timestamps": timestamps,
+            "values": data.get("values", []),
+            "timestamps": data.get("timestamps", []),
             "period": period or "custom",
-            "start_time": start_dt.isoformat() if start_time and end_time else None,
-            "end_time": end_dt.isoformat() if start_time and end_time else None,
-            "station_count": station_count,
+            "start_time": start_dt.strftime("%Y-%m-%d %H:%M:%S"),
+            "end_time": end_dt.strftime("%Y-%m-%d %H:%M:%S"),
+            "granularity": data.get("granularity"),
+            "station_count": data.get("station_count", 0),
+            "valid_points": data.get("valid_points", 0),
             "update_time": datetime.now().isoformat(),
         }
 
@@ -736,56 +544,35 @@ async def get_kpi_data(
     line: Optional[str] = Query(None, description="地铁线路，如M3、M8等"),
     station_ip: Optional[str] = Query(None, description="站点IP"),
     x_station_ip: Optional[str] = Header(None, alias="X-Station-Ip"),
+    energy_service: EnergyService = Depends(get_energy_service),
 ):
     """
     获取KPI指标数据
-    包括：今日总能耗、当前功率、峰值功率、监控车站数
+    包括：今日总能耗
     """
     try:
         # 确定站点IP
         target_station_ip = station_ip or x_station_ip
 
-        # 获取站点列表
-        stations = []
-        if target_station_ip:
-            station_config = electricity_config.get_station_by_ip(target_station_ip)
-            if station_config:
-                stations = [station_config]
-        elif line:
-            stations = electricity_config.get_stations_by_line(line)
-        else:
-            stations = electricity_config.get_all_stations()
+        # 调用energy_service获取真实数据
+        result = await energy_service.get_energy_overview(target_station_ip)
 
-        station_count = len(stations)
+        if not result.get("success"):
+            raise HTTPException(
+                status_code=result.get("code", 500),
+                detail=result.get("error", "获取KPI数据失败"),
+            )
 
-        # 模拟KPI数据计算
-        # 基于站点数量计算基础值
-        base_power_per_station = 150  # 每站点基础功率(kW)
+        data = result.get("data", {})
 
-        # 当前功率：各站点当前功率之和，加入随机波动
-        current_kw = sum(
-            base_power_per_station * (0.8 + 0.4 * random.random())
-            for _ in range(station_count)
-        )
-        current_kw = round(current_kw, 1)
-
-        # 峰值功率：当前功率的1.2-1.5倍
-        peak_kw = current_kw * random.uniform(1.2, 1.5)
-        peak_kw = round(peak_kw, 1)
-
-        # 今日总能耗：根据当前功率估算（假设当前已经运行了部分时间）
-        hours_elapsed = datetime.now().hour + datetime.now().minute / 60
-        total_kwh_today = current_kw * hours_elapsed * random.uniform(0.8, 1.2)
-        total_kwh_today = round(total_kwh_today, 1)
-
+        # 返回总能耗数据
         return {
-            "total_kwh_today": total_kwh_today,
-            "current_kw": current_kw,
-            "peak_kw": peak_kw,
-            "station_count": station_count,
-            "update_time": datetime.now().isoformat(),
+            "total_kwh_today": data.get("total_consumption", 0),
+            "update_time": data.get("update_time", datetime.now().isoformat()),
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"获取KPI数据失败: {e}")
         raise HTTPException(status_code=500, detail=f"获取KPI数据失败: {str(e)}")
@@ -801,6 +588,7 @@ async def get_compare_data(
     start_time: Optional[str] = Query(None, description="开始时间 YYYY-MM-DD HH:mm:ss"),
     end_time: Optional[str] = Query(None, description="结束时间 YYYY-MM-DD HH:mm:ss"),
     x_station_ip: Optional[str] = Header(None, alias="X-Station-Ip"),
+    energy_service: EnergyService = Depends(get_energy_service),
 ):
     """
     获取同比环比对比数据
@@ -811,65 +599,58 @@ async def get_compare_data(
         # 确定站点IP
         target_station_ip = station_ip or x_station_ip
 
-        # 获取站点列表
-        stations = []
-        if target_station_ip:
-            station_config = electricity_config.get_station_by_ip(target_station_ip)
-            if station_config:
-                stations = [station_config]
-        elif line:
-            stations = electricity_config.get_stations_by_line(line)
-        else:
-            stations = electricity_config.get_all_stations()
-
-        station_count = len(stations)
-
-        # 计算时间跨度
+        # 解析时间范围
+        now = datetime.now()
         if start_time and end_time:
             try:
                 start_dt = datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S")
                 end_dt = datetime.strptime(end_time, "%Y-%m-%d %H:%M:%S")
-                time_diff = end_dt - start_dt
-                days = time_diff.total_seconds() / (3600 * 24)
             except ValueError:
                 raise HTTPException(
                     status_code=400, detail="时间格式错误，应为 YYYY-MM-DD HH:mm:ss"
                 )
         elif period:
             if period == "24h":
-                days = 1
+                start_dt = now - timedelta(hours=24)
+                end_dt = now
             elif period == "7d":
-                days = 7
+                start_dt = now - timedelta(days=7)
+                end_dt = now
             elif period == "30d":
-                days = 30
+                start_dt = now - timedelta(days=30)
+                end_dt = now
             else:
-                days = 1
+                start_dt = now - timedelta(hours=24)
+                end_dt = now
         else:
-            days = 1
+            # 默认24小时
+            start_dt = now - timedelta(hours=24)
+            end_dt = now
 
-        # 根据天数计算基准能耗
-        base_kwh = station_count * 3500 * days  # 每站点日均3500kWh
+        # 调用energy_service获取真实的同比环比数据
+        result = await energy_service.get_comparison_data(
+            start_dt, end_dt, target_station_ip, line
+        )
 
-        # 当前周期能耗（加入随机波动）
-        current_kwh = base_kwh * random.uniform(0.9, 1.1)
-        current_kwh = round(current_kwh, 1)
+        if not result.get("success"):
+            raise HTTPException(
+                status_code=result.get("code", 500),
+                detail=result.get("error", "获取对比数据失败"),
+            )
 
-        # 同比变化（与去年同期对比）：模拟节能效果，一般为负值或小正值
-        yoy_percent = random.uniform(-15, 5)
-        yoy_percent = round(yoy_percent, 1)
-
-        # 环比变化（与上一周期对比）：波动较小
-        mom_percent = random.uniform(-10, 10)
-        mom_percent = round(mom_percent, 1)
+        data = result.get("data", {})
 
         return {
-            "current_kwh": current_kwh,
-            "yoy_percent": yoy_percent,
-            "mom_percent": mom_percent,
+            "current_kwh": data.get("current_kwh", 0),
+            "yoy_percent": data.get("yoy_percent", 0),
+            "mom_percent": data.get("mom_percent", 0),
+            "yoy_kwh": data.get("yoy_kwh", 0),
+            "mom_kwh": data.get("mom_kwh", 0),
             "period": period or "custom",
-            "start_time": start_time,
-            "end_time": end_time,
-            "station_count": station_count,
+            "start_time": start_dt.strftime("%Y-%m-%d %H:%M:%S"),
+            "end_time": end_dt.strftime("%Y-%m-%d %H:%M:%S"),
+            "station_count": data.get("station_count", 0),
+            "valid_data_count": data.get("valid_data_count", 0),
             "update_time": datetime.now().isoformat(),
         }
 
@@ -895,104 +676,15 @@ async def get_classification_data(
     获取分类分项能耗数据
     支持自定义时间范围
     返回各类设备的能耗占比，用于饼图展示
+
+    注意：当前仅返回空数据，需要真实数据请确保配置正确
     """
     try:
-        # 确定站点IP
-        target_station_ip = station_ip or x_station_ip
-
-        # 获取站点列表
-        stations = []
-        if target_station_ip:
-            station_config = electricity_config.get_station_by_ip(target_station_ip)
-            if station_config:
-                stations = [station_config]
-        elif line:
-            stations = electricity_config.get_stations_by_line(line)
-        else:
-            stations = electricity_config.get_all_stations()
-
-        station_count = len(stations)
-
-        # 计算时间跨度
-        if start_time and end_time:
-            try:
-                start_dt = datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S")
-                end_dt = datetime.strptime(end_time, "%Y-%m-%d %H:%M:%S")
-                if start_dt >= end_dt:
-                    raise HTTPException(status_code=400, detail="开始时间必须早于结束时间")
-                time_diff = end_dt - start_dt
-                days = max(1, time_diff.total_seconds() / (3600 * 24))
-            except ValueError:
-                raise HTTPException(
-                    status_code=400, detail="时间格式错误，应为 YYYY-MM-DD HH:mm:ss"
-                )
-        elif period:
-            if period == "24h":
-                days = 1
-            elif period == "7d":
-                days = 7
-            elif period == "30d":
-                days = 30
-            else:
-                days = 1
-        else:
-            days = 1
-
-        # 定义设备分类及其占比范围
-        categories = [
-            {"name": "冷机系统", "ratio_range": (0.35, 0.45)},
-            {"name": "水泵系统", "ratio_range": (0.15, 0.25)},
-            {"name": "冷却塔", "ratio_range": (0.08, 0.15)},
-            {"name": "通风系统", "ratio_range": (0.10, 0.18)},
-            {"name": "照明系统", "ratio_range": (0.05, 0.12)},
-            {"name": "其他设备", "ratio_range": (0.03, 0.08)},
-        ]
-
-        # 模拟总能耗（基于时间跨度和站点数）
-        total_kwh = station_count * 3500 * days
-
-        # 生成各分类能耗数据
-        items = []
-        used_ratio_sum = 0.0
-        kwh_values = []
-
-        for i, category in enumerate(categories):
-            if i == len(categories) - 1:
-                # 最后一项使用剩余比例，确保总和为1.0
-                ratio = max(0.05, 1.0 - used_ratio_sum)
-            else:
-                ratio = random.uniform(
-                    category["ratio_range"][0], category["ratio_range"][1]
-                )
-                used_ratio_sum += ratio
-
-            kwh_values.append(total_kwh * ratio)
-
-        # 归一化确保总和等于total_kwh
-        actual_total = sum(kwh_values) or 1
-        normalization_factor = total_kwh / actual_total
-
-        for i, category in enumerate(categories):
-            normalized_kwh = kwh_values[i] * normalization_factor
-            percentage = (normalized_kwh / total_kwh) * 100
-
-            items.append(
-                {
-                    "name": category["name"],
-                    "kwh": round(normalized_kwh, 1),
-                    "percentage": round(percentage, 1),
-                }
-            )
-
-        return {
-            "items": items,
-            "total_kwh": round(total_kwh, 1),
-            "period": period or "custom",
-            "start_time": start_time,
-            "end_time": end_time,
-            "station_count": station_count,
-            "update_time": datetime.now().isoformat(),
-        }
+        logger.warning("分类能耗数据接口暂未实现真实数据，请根据站点设备分类配置完善数据来源")
+        raise HTTPException(
+            status_code=501,
+            detail="分类能耗数据暂未提供真实数据来源，请联系运维团队配置站点设备分类信息",
+        )
 
     except HTTPException:
         raise
