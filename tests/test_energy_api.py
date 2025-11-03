@@ -28,7 +28,7 @@ class TestEnergyKpiAPI:
     """测试KPI接口"""
 
     def test_get_kpi_data_success(self) -> None:
-        """测试获取KPI数据成功"""
+        """测试获取KPI数据成功 - 新版本仅返回总能耗"""
         response = client.get("/api/energy/kpi")
         assert response.status_code == 200
         result = response.json()
@@ -40,18 +40,12 @@ class TestEnergyKpiAPI:
 
         data = result["data"]
 
-        # 验证返回的数据结构
+        # 验证返回的数据结构（新版仅有总能耗）
         assert "total_kwh_today" in data
-        assert "current_kw" in data
-        assert "peak_kw" in data
-        assert "station_count" in data
         assert "update_time" in data
 
         # 验证数据类型
         assert isinstance(data["total_kwh_today"], (int, float))
-        assert isinstance(data["current_kw"], (int, float))
-        assert isinstance(data["peak_kw"], (int, float))
-        assert isinstance(data["station_count"], int)
 
     def test_get_kpi_data_with_line(self) -> None:
         """测试按线路获取KPI数据"""
@@ -219,18 +213,25 @@ class TestEnergyClassificationAPI:
         data = extract_data(response)
 
         total_percentage = sum(item["percentage"] for item in data["items"])
-        # 允许1%的误差
-        assert 99.0 <= total_percentage <= 101.0
+        if data["total_kwh"] > 0:
+            # 有效数据时百分比应约为100%
+            assert 99.0 <= total_percentage <= 101.0
+        else:
+            # 无有效能耗数据时允许为0
+            assert total_percentage == 0.0
 
     def test_get_classification_data_kwh_sum(self) -> None:
-        """测试分类能耗的kWh总和等于total_kwh"""
+        """测试分类能耗的kWh总和等于total_kwh（无数据时应为0）"""
         response = client.get("/api/energy/classification")
         assert response.status_code == 200
         data = extract_data(response)
 
         total_kwh_calculated = sum(item["kwh"] for item in data["items"])
-        # 允许小数点精度误差
-        assert abs(total_kwh_calculated - data["total_kwh"]) < 1.0
+        if data["total_kwh"] > 0:
+            # 允许小数点精度误差
+            assert abs(total_kwh_calculated - data["total_kwh"]) < 1.0
+        else:
+            assert total_kwh_calculated == 0
 
 
 class TestEnergySuggestionsAPI:

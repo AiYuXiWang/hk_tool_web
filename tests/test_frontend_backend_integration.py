@@ -35,12 +35,9 @@ class TestEnergyCockpitWorkflow:
         assert kpi_response.status_code == 200
         kpi_data = self._extract_data(kpi_response)
 
-        # 验证KPI数据完整性
+        # 验证KPI数据完整性（新版本仅有总能耗）
         required_kpi_fields = [
             "total_kwh_today",
-            "current_kw",
-            "peak_kw",
-            "station_count",
         ]
         for field in required_kpi_fields:
             assert field in kpi_data, f"KPI数据缺少字段: {field}"
@@ -95,8 +92,7 @@ class TestEnergyCockpitWorkflow:
         assert isinstance(suggestions_data["suggestions"], list)
 
         print("\n✅ 能源驾驶舱完整工作流测试通过")
-        print(f"   - 站点数量: {kpi_data['station_count']}")
-        print(f"   - 实时功率: {kpi_data['current_kw']} kW")
+        print(f"   - 今日总能耗: {kpi_data['total_kwh_today']} kWh")
         print(f"   - 实时数据点: {len(realtime_data['timestamps'])} 个")
         print(f"   - 趋势数据点: {len(trend_data['values'])} 个")
         print(f"   - 分类项数: {len(classification_data['items'])} 个")
@@ -180,8 +176,9 @@ class TestEnergyCockpitWorkflow:
         assert data1 is not None
         assert data2 is not None
 
-        # station_count应该保持一致（短时间内不会变化）
-        assert data1["station_count"] == data2["station_count"]
+        # total_kwh_today应该存在
+        assert "total_kwh_today" in data1
+        assert "total_kwh_today" in data2
 
         print("\n✅ 刷新数据工作流测试通过")
 
@@ -294,8 +291,8 @@ class TestKpiCardIntegration:
         if result.get("code") == 200:
             data = result["data"]
 
-            # EnergyKpiCard组件需要的数据
-            kpi_fields = ["total_kwh_today", "current_kw", "peak_kw", "station_count"]
+            # EnergyKpiCard组件需要的数据（新版本仅有总能耗）
+            kpi_fields = ["total_kwh_today"]
 
             for field in kpi_fields:
                 assert field in data, f"缺少KPI字段: {field}"
@@ -382,7 +379,6 @@ class TestDataConsistencyIntegration:
         assert realtime_data is not None
 
         # 数据应该在合理范围内
-        assert kpi_data["current_kw"] >= 0
         assert kpi_data["total_kwh_today"] >= 0
 
         print("\n✅ KPI与实时数据一致性测试通过")

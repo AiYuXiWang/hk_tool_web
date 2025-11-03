@@ -104,19 +104,23 @@ class TestEnergyAPIDataConsistency:
                 ), f"Period {period}: 数值数量与时间戳数量不匹配"
 
     def test_classification_percentages_sum_to_100(self) -> None:
-        """测试分类能耗百分比总和为100%"""
+        """测试分类能耗百分比总和为100%（无数据时为0）"""
         response = client.get("/api/energy/classification")
         assert response.status_code == 200
         result = response.json()
 
         if result["code"] == 200:
             data = result["data"]
-            if data["items"]:
+            if data["items"] and data["total_kwh"] > 0:
                 total_percentage = sum(item["percentage"] for item in data["items"])
                 # 允许1%的舍入误差
                 assert (
                     99.0 <= total_percentage <= 101.0
                 ), f"百分比总和应为100%，实际为 {total_percentage}%"
+            else:
+                # 无有效数据时允许为0
+                total_percentage = sum(item["percentage"] for item in data["items"])
+                assert total_percentage == 0.0, "无数据时百分比应为0"
 
     def test_classification_kwh_sum_matches_total(self) -> None:
         """测试分类能耗kWh总和与总能耗匹配"""
@@ -126,12 +130,15 @@ class TestEnergyAPIDataConsistency:
 
         if result["code"] == 200:
             data = result["data"]
-            if data["items"]:
+            if data["total_kwh"] > 0 and data["items"]:
                 calculated_total = sum(item["kwh"] for item in data["items"])
                 # 允许小数点精度误差
                 assert (
                     abs(calculated_total - data["total_kwh"]) < 1.0
                 ), f"分类能耗总和 ({calculated_total}) 与 total_kwh ({data['total_kwh']}) 不匹配"
+            else:
+                calculated_total = sum(item["kwh"] for item in data["items"])
+                assert calculated_total == 0, "无数据时分类能耗总和应为0"
 
     def test_compare_data_logical_consistency(self) -> None:
         """测试对比数据的逻辑一致性"""
@@ -165,13 +172,10 @@ class TestEnergyAPIDataTypes:
         if result["code"] == 200:
             data = result["data"]
 
-            # 验证数值字段的类型
+            # 验证数值字段的类型（新版本仅有总能耗）
             assert isinstance(
                 data["total_kwh_today"], (int, float)
             ), "total_kwh_today应为数值类型"
-            assert isinstance(data["current_kw"], (int, float)), "current_kw应为数值类型"
-            assert isinstance(data["peak_kw"], (int, float)), "peak_kw应为数值类型"
-            assert isinstance(data["station_count"], int), "station_count应为整数类型"
 
             # 验证字符串字段的类型
             assert isinstance(data["update_time"], str), "update_time应为字符串类型"
