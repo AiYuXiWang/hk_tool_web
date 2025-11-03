@@ -56,13 +56,10 @@ class TestEnergyKpiAPI:
 
     def test_get_kpi_data_with_station_ip(self) -> None:
         """测试按站点IP获取KPI数据（无效IP应返回错误或0值）"""
-        response = client.get("/api/energy/kpi?station_ip=192.168.1.100")
-        # 无效IP可能返回500或200（带错误信息）
-        assert response.status_code in [200, 500]
-        if response.status_code == 200:
-            data = extract_data(response)
-            # 可能返回0值或错误信息
-            assert "total_kwh_today" in data or "error" in data
+        response = client.get("/api/energy/kpi?station_ip=192.168.100.3")
+        assert response.status_code == 200
+        data = extract_data(response)
+        assert "total_kwh_today" in data
 
 
 class TestEnergyRealtimeAPI:
