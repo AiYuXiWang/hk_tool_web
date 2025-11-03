@@ -671,20 +671,67 @@ async def get_classification_data(
     start_time: Optional[str] = Query(None, description="开始时间 YYYY-MM-DD HH:mm:ss"),
     end_time: Optional[str] = Query(None, description="结束时间 YYYY-MM-DD HH:mm:ss"),
     x_station_ip: Optional[str] = Header(None, alias="X-Station-Ip"),
+    energy_service: EnergyService = Depends(get_energy_service),
 ):
     """
     获取分类分项能耗数据
     支持自定义时间范围
     返回各类设备的能耗占比，用于饼图展示
-
-    注意：当前仅返回空数据，需要真实数据请确保配置正确
+    设备分类：冷水机组、冷却塔、水泵、风机
     """
     try:
-        logger.warning("分类能耗数据接口暂未实现真实数据，请根据站点设备分类配置完善数据来源")
-        raise HTTPException(
-            status_code=501,
-            detail="分类能耗数据暂未提供真实数据来源，请联系运维团队配置站点设备分类信息",
+        target_station_ip = station_ip or x_station_ip
+        now = datetime.now()
+
+        # 解析时间范围
+        if start_time and end_time:
+            try:
+                start_dt = datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S")
+                end_dt = datetime.strptime(end_time, "%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                raise HTTPException(
+                    status_code=400, detail="时间格式错误，应为 YYYY-MM-DD HH:mm:ss"
+                )
+        elif period:
+            if period == "24h":
+                start_dt = now - timedelta(hours=24)
+                end_dt = now
+            elif period == "7d":
+                start_dt = now - timedelta(days=7)
+                end_dt = now
+            elif period == "30d":
+                start_dt = now - timedelta(days=30)
+                end_dt = now
+            else:
+                raise HTTPException(status_code=400, detail="不支持的时间周期")
+        else:
+            # 默认24小时
+            start_dt = now - timedelta(hours=24)
+            end_dt = now
+
+        # 调用energy_service获取分类能耗数据
+        result = await energy_service.get_classification_data(
+            start_dt, end_dt, target_station_ip, line
         )
+
+        if not result.get("success"):
+            raise HTTPException(
+                status_code=result.get("code", 500),
+                detail=result.get("error", "获取分类能耗数据失败"),
+            )
+
+        data = result.get("data", {})
+
+        return {
+            "items": data.get("items", []),
+            "total_kwh": data.get("total_kwh", 0),
+            "period": period or "custom",
+            "start_time": data.get("start_time"),
+            "end_time": data.get("end_time"),
+            "station_count": data.get("station_count", 0),
+            "valid_station_count": data.get("valid_station_count", 0),
+            "update_time": datetime.now().isoformat(),
+        }
 
     except HTTPException:
         raise

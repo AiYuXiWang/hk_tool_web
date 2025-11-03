@@ -797,6 +797,133 @@ class EnergyService(CacheableService):
             self.log_error("get_trend_series", e, station_ip=station_ip, line=line)
             return self.format_error_response(f"获取趋势数据失败: {str(e)}")
 
+    async def get_classification_data(  # noqa: C901
+        self,
+        start_time: datetime,
+        end_time: datetime,
+        station_ip: Optional[str] = None,
+        line: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        获取按设备分类的能耗数据
+        从config_electricity.py中读取设备信息，根据设备名称分类为：冷水机组、冷却塔、水泵、风机
+        """
+        try:
+            if start_time >= end_time:
+                raise ValueError("开始时间必须早于结束时间")
+
+            # 获取站点列表
+            stations = await self._get_stations(station_ip, line)
+            if not stations:
+                raise ValueError("未找到站点配置")
+
+            # 分类统计容器
+            categories = {
+                "冷水机组": 0.0,
+                "冷却塔": 0.0,
+                "水泵": 0.0,
+                "风机": 0.0,
+            }
+
+            total_consumption = 0.0
+            device_count_by_category = {cat: 0 for cat in categories.keys()}
+
+            # 统计所有站点的设备分类
+            for station in stations:
+                station_devices = (
+                    self.electricity_config.get_station_devices(station["ip"]) or []
+                )
+                if not station_devices:
+                    self.logger.warning(f"站点 {station.get('name')} 没有配置设备")
+                    continue
+
+                for device in station_devices:
+                    device_type = device.get("type", "其他")
+                    mapped_category = self._map_device_category(device_type)
+                    if not mapped_category:
+                        continue
+
+                    device_count_by_category[mapped_category] += 1
+
+            self.logger.info(
+                f"设备分类统计: {device_count_by_category}, 共 {sum(device_count_by_category.values())} 台设备"
+            )
+
+            # 获取站点总能耗
+            station_tasks = [
+                self.realtime_service.get_station_energy_consumption(
+                    station, start_time, end_time
+                )
+                for station in stations
+            ]
+
+            results = await asyncio.gather(*station_tasks, return_exceptions=True)
+
+            valid_results = [
+                r for r in results if not isinstance(r, Exception) and r is not None
+            ]
+
+            if valid_results:
+                total_consumption = sum(valid_results)
+
+                # 按设备类型分配能耗（基于设备数量占比）
+                total_devices = sum(device_count_by_category.values())
+                if total_devices > 0:
+                    for category, device_count in device_count_by_category.items():
+                        ratio = device_count / total_devices
+                        categories[category] = total_consumption * ratio
+
+            # 生成分类项
+            items = []
+            for category, kwh in categories.items():
+                if total_consumption > 0:
+                    percentage = round(kwh / total_consumption * 100, 1)
+                else:
+                    percentage = 0.0
+                items.append(
+                    {
+                        "name": category,
+                        "kwh": round(kwh, 1),
+                        "percentage": percentage,
+                        "device_count": device_count_by_category[category],
+                    }
+                )
+
+            self.logger.info(
+                f"分类能耗统计完成 - 总能耗: {total_consumption:.1f} kWh, 分类数: {len(items)}"
+            )
+
+            return self.format_response(
+                {
+                    "items": items,
+                    "total_kwh": round(total_consumption, 1),
+                    "station_count": len(stations),
+                    "valid_station_count": len(valid_results),
+                    "start_time": start_time.strftime("%Y-%m-%d %H:%M:%S"),
+                    "end_time": end_time.strftime("%Y-%m-%d %H:%M:%S"),
+                },
+                "分类能耗数据获取成功",
+            )
+
+        except Exception as e:
+            self.log_error(
+                "get_classification_data",
+                e,
+                station_ip=station_ip,
+                line=line,
+            )
+            return self.format_error_response(f"获取分类能耗数据失败: {str(e)}")
+
+    def _map_device_category(self, device_type: str) -> Optional[str]:
+        """将设备类型映射到分类"""
+        mapping = {
+            "冷机": "冷水机组",
+            "冷却塔": "冷却塔",
+            "水泵": "水泵",
+            "风机": "风机",
+        }
+        return mapping.get(device_type)
+
     async def _calculate_kpi_metrics(
         self, stations: List[Dict[str, Any]]
     ) -> Dict[str, Any]:
