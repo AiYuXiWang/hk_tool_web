@@ -10,6 +10,7 @@
 - ⚡ **批量写值控制**：支持多点位批量控制，容错重试机制
 - 📈 **数据导出**：电耗数据、传感器数据导出，支持 Excel/CSV 格式
 - 🔍 **操作审计**：完整的操作日志记录，包含前后值对比
+- 💻 **桌面版应用**：基于 Electron 的跨平台桌面应用，功能与 Web 端完全一致
 
 ### 技术亮点
 - ✅ **智能模糊匹配**：自动处理不完整的 point_key 格式
@@ -71,15 +72,34 @@ hk_tool_web/
 ├── frontend/                    # Vue.js 前端应用
 │   ├── src/
 │   │   ├── App.vue             # 主应用组件
-│   │   ├── DeviceOverview.vue  # 设备总览组件
+│   │   ├── views/              # 页面组件
+│   │   │   ├── DataExport.vue  # 数据导出页面
+│   │   │   └── DeviceOverview.vue  # 设备总览页面
+│   │   ├── components/         # 通用组件
+│   │   ├── api/                # API 调用封装
+│   │   ├── stores/             # 状态管理
 │   │   └── main.js             # 应用入口
 │   ├── index.html              # HTML 模板
 │   ├── package.json            # 前端依赖
 │   └── vite.config.js          # Vite 配置
+├── desktop/                    # 桌面版应用（新增）
+│   ├── main.js                 # Electron 主进程
+│   ├── preload.js              # 预加载脚本
+│   ├── package.json            # 桌面版依赖
+│   ├── build.sh / build.bat    # 构建脚本
+│   ├── start-dev.sh / .bat     # 开发启动脚本
+│   ├── assets/                 # 应用图标资源
+│   └── README.md               # 桌面版说明
+├── backend/                    # 后端模块化代码
+│   └── app/
+│       ├── api/                # API 路由
+│       ├── services/           # 业务服务
+│       ├── models/             # 数据模型
+│       ├── middleware/         # 中间件
+│       └── config/             # 配置管理
 ├── docs/                       # 项目文档
 │   ├── openapi/               # API 文档
 │   └── *.md                   # 各种说明文档
-├── templates/                  # 模板文件
 ├── main.py                     # FastAPI 主应用
 ├── control_service.py          # 设备控制服务
 ├── export_service.py           # 数据导出服务
@@ -100,7 +120,7 @@ hk_tool_web/
 - Node.js 16+
 - MySQL 数据库
 
-### 一键启动（推荐）
+### Web 版一键启动（推荐）
 ```bash
 # Windows 用户
 start_all.bat
@@ -108,6 +128,26 @@ start_all.bat
 # 或者手动启动
 start_simple.bat
 ```
+
+### 桌面版快速启动（新增）
+```bash
+# Linux/macOS
+cd desktop
+./start-dev.sh
+
+# Windows
+cd desktop
+start-dev.bat
+```
+
+**桌面版特点**：
+- ✅ 跨平台支持（Windows、macOS、Linux）
+- ✅ 独立应用程序，无需浏览器
+- ✅ 原生菜单、对话框、通知
+- ✅ 本地配置持久化
+- ✅ 功能与 Web 端完全一致（数据导出 + 数据写值）
+
+详细说明请查看 [desktop/README.md](desktop/README.md)
 
 ### 重启服务（推荐）
 使用重启脚本可以快速重启前后端服务并运行测试：

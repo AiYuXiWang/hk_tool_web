@@ -21,7 +21,6 @@ import requests
 import config_electricity
 from audit_service import audit_service
 from backend.app.api.data_upload import router as data_upload_router
-from backend.app.api.energy_dashboard import router as energy_dashboard_router
 from backend.app.core.dependencies import initialize_services, shutdown_services
 from backend.app.middleware.error_handler import ErrorHandlerMiddleware
 from backend.app.middleware.logging import (
@@ -54,9 +53,6 @@ from task_manager import task_manager
 logger = app_logger
 
 app = FastAPI(title="环控平台维护工具Web版", description="将桌面端环控平台维护工具迁移为Web应用")
-
-# 注册能源驾驶舱API路由
-app.include_router(energy_dashboard_router, prefix="/api/energy", tags=["能源驾驶舱"])
 
 # 注册数据上传API路由
 app.include_router(data_upload_router, prefix="/api/data", tags=["数据管理"])

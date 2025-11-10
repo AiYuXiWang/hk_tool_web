@@ -1,0 +1,44 @@
+# Dependencies
+node_modules/
+package-lock.json
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build output
+dist/
+dist-electron/
+renderer/
+
+# Electron
+out/
+*.pid
+
+# Logs
+logs/
+*.log
+backend.log
+frontend.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Electron Builder
+.electron-builder.yml
+electron-builder.yml
+
+# Configuration
+config.json
+
+# Temporary files
+temp/
+tmp/
+*.tmp
