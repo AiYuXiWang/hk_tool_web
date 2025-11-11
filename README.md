@@ -10,7 +10,7 @@
 - ⚡ **批量写值控制**：支持多点位批量控制，容错重试机制
 - 📈 **数据导出**：电耗数据、传感器数据导出，支持 Excel/CSV 格式
 - 🔍 **操作审计**：完整的操作日志记录，包含前后值对比
-- 💻 **桌面版应用**：基于 Electron 的跨平台桌面应用，功能与 Web 端完全一致
+- 💻 **桌面版应用**：基于 PySide6 (Qt6) 的原生跨平台桌面应用，功能与 Web 端完全一致
 
 ### 技术亮点
 - ✅ **智能模糊匹配**：自动处理不完整的 point_key 格式
@@ -82,11 +82,17 @@ hk_tool_web/
 │   ├── index.html              # HTML 模板
 │   ├── package.json            # 前端依赖
 │   └── vite.config.js          # Vite 配置
-├── desktop/                    # 桌面版应用（新增）
-│   ├── main.js                 # Electron 主进程
-│   ├── preload.js              # 预加载脚本
-│   ├── package.json            # 桌面版依赖
-│   ├── build.sh / build.bat    # 构建脚本
+├── desktop/                    # 桌面版应用（新增 - PySide6）
+│   ├── main.py                 # 主应用程序
+│   ├── api_client.py           # API 客户端
+│   ├── dialogs.py              # 对话框模块
+│   ├── widgets/                # 自定义控件
+│   │   ├── device_tree.py      # 设备树控件
+│   │   ├── data_table.py       # 数据表格控件
+│   │   ├── export_panel.py     # 导出面板控件
+│   │   └── log_panel.py        # 日志面板控件
+│   ├── requirements.txt        # Python 依赖
+│   ├── build.sh / build.bat    # 构建脚本（PyInstaller）
 │   ├── start-dev.sh / .bat     # 开发启动脚本
 │   ├── assets/                 # 应用图标资源
 │   └── README.md               # 桌面版说明
@@ -140,12 +146,17 @@ cd desktop
 start-dev.bat
 ```
 
-**桌面版特点**：
+**桌面版特点（PySide6）**：
 - ✅ 跨平台支持（Windows、macOS、Linux）
-- ✅ 独立应用程序，无需浏览器
-- ✅ 原生菜单、对话框、通知
-- ✅ 本地配置持久化
-- ✅ 功能与 Web 端完全一致（数据导出 + 数据写值）
+- ✅ 原生桌面应用，无需浏览器
+- ✅ Qt6 原生 UI 组件
+- ✅ 原生菜单、对话框和文件选择器
+- ✅ 本地配置持久化（JSON）
+- ✅ 功能与 Web 端完全一致：
+  - 设备控制与点位管理
+  - 数据导出（电耗、传感器）
+  - 数据写值（单点、批量）
+  - 操作审计日志
 
 详细说明请查看 [desktop/README.md](desktop/README.md)
 
