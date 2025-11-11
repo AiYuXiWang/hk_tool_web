@@ -1,5 +1,5 @@
 @echo off
-REM 环控平台维护工具 - 桌面版开发启动脚本 (Windows)
+REM 环控平台维护工具 - 桌面版开发启动脚本 (Windows/PySide6)
 
 setlocal enabledelayedexpansion
 
@@ -73,14 +73,25 @@ if !FRONTEND_RUNNING! EQU 0 (
     timeout /t 5 /nobreak >nul
 )
 
-REM 启动 Electron
+REM 启动桌面应用
 echo.
-echo [启动] Electron 桌面应用...
+echo [启动] PySide6 桌面应用...
 cd "%~dp0"
 
-if not exist "node_modules" (
+REM 检查 Python 虚拟环境
+if not exist "venv" (
+    echo   创建虚拟环境...
+    python -m venv venv
+)
+
+REM 激活虚拟环境
+call venv\Scripts\activate.bat
+
+REM 安装依赖（如果需要）
+if not exist "venv\.installed" (
     echo   安装桌面版依赖...
-    call npm install
+    pip install -r requirements.txt
+    echo installed > venv\.installed
 )
 
 echo.
@@ -93,12 +104,13 @@ echo   - 后端 API:  http://localhost:8000
 echo   - API 文档:  http://localhost:8000/docs
 echo   - 前端界面: http://localhost:5173
 echo.
+echo 桌面应用使用 PySide6 (Qt6)
 echo 关闭此窗口将退出桌面应用
 echo （后端和前端服务将继续运行）
 echo.
 
-REM 启动 Electron（前台）
-call npm run dev
+REM 启动桌面应用（前台）
+python main.py --dev
 
 echo.
 echo 桌面应用已关闭

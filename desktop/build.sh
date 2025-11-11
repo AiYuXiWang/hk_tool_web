@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# 环控平台维护工具 - 桌面版构建脚本
+# 环控平台维护工具 - 桌面版构建脚本（PySide6）
 
 set -e
 
@@ -14,28 +14,20 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-# 检查 Node.js
-if ! command -v node &> /dev/null; then
-    echo -e "${RED}错误: 未安装 Node.js${NC}"
+# 检查 Python
+if ! command -v python3 &> /dev/null; then
+    echo -e "${RED}错误: 未安装 Python3${NC}"
     exit 1
 fi
 
-echo -e "${GREEN}✓${NC} Node.js 版本: $(node --version)"
-
-# 检查 npm
-if ! command -v npm &> /dev/null; then
-    echo -e "${RED}错误: 未安装 npm${NC}"
-    exit 1
-fi
-
-echo -e "${GREEN}✓${NC} npm 版本: $(npm --version)"
+echo -e "${GREEN}✓${NC} Python 版本: $(python3 --version)"
 
 # 进入项目根目录
 cd "$(dirname "$0")/.."
 
 # 1. 构建前端
 echo ""
-echo "步骤 1/3: 构建前端..."
+echo "步骤 1/4: 构建前端..."
 echo "-------------------"
 cd frontend
 
@@ -51,7 +43,7 @@ echo -e "${GREEN}✓${NC} 前端构建完成"
 
 # 2. 复制构建文件到桌面版
 echo ""
-echo "步骤 2/3: 准备桌面版资源..."
+echo "步骤 2/4: 准备桌面版资源..."
 echo "-------------------"
 cd ../desktop
 
@@ -64,47 +56,127 @@ cp -r ../frontend/dist/* renderer/
 
 echo -e "${GREEN}✓${NC} 资源复制完成"
 
-# 3. 安装桌面版依赖
+# 3. 创建虚拟环境并安装依赖
 echo ""
-echo "步骤 3/3: 安装桌面版依赖..."
+echo "步骤 3/4: 安装桌面版依赖..."
 echo "-------------------"
 
-if [ ! -d "node_modules" ]; then
-    npm install
-else
-    echo "依赖已存在，跳过安装"
+if [ ! -d "venv" ]; then
+    echo "创建虚拟环境..."
+    python3 -m venv venv
 fi
+
+echo "激活虚拟环境..."
+source venv/bin/activate
+
+echo "安装依赖..."
+pip install -r requirements.txt
+pip install pyinstaller
 
 echo -e "${GREEN}✓${NC} 依赖安装完成"
 
-# 4. 构建桌面应用
+# 4. 使用 PyInstaller 打包
 echo ""
-echo "构建桌面应用..."
+echo "步骤 4/4: 打包桌面应用..."
 echo "-------------------"
 
-# 根据参数选择构建平台
-PLATFORM=${1:-all}
+# 根据参数选择打包选项
+PLATFORM=${1:-onedir}
+
+# 创建 spec 文件（如果不存在）
+if [ ! -f "hk-tool.spec" ]; then
+    echo "创建 PyInstaller spec 文件..."
+    cat > hk-tool.spec << 'EOF'
+# -*- mode: python ; coding: utf-8 -*-
+
+block_cipher = None
+
+a = Analysis(
+    ['main.py'],
+    pathex=[],
+    binaries=[],
+    datas=[
+        ('renderer', 'renderer'),
+        ('assets', 'assets'),
+    ],
+    hiddenimports=[
+        'PySide6.QtWebEngineCore',
+        'PySide6.QtWebEngineWidgets',
+    ],
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=[],
+    win_no_prefer_redirects=False,
+    win_private_assemblies=False,
+    cipher=block_cipher,
+    noarchive=False,
+)
+
+pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+
+exe = EXE(
+    pyz,
+    a.scripts,
+    [],
+    exclude_binaries=True,
+    name='hk-tool-desktop',
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=True,
+    console=False,
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+    icon='assets/icon.png',
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    name='hk-tool-desktop',
+)
+
+# macOS App Bundle
+app = BUNDLE(
+    coll,
+    name='环控平台维护工具.app',
+    icon='assets/icon.icns',
+    bundle_identifier='com.hk.tool.desktop',
+    info_plist={
+        'NSHighResolutionCapable': 'True',
+        'LSUIElement': False,
+    },
+)
+EOF
+fi
 
 case $PLATFORM in
-    win|windows)
-        echo "构建 Windows 版本..."
-        npm run build:win
+    onedir)
+        echo "打包为目录格式..."
+        pyinstaller hk-tool.spec --distpath dist --clean
         ;;
-    mac|macos)
-        echo "构建 macOS 版本..."
-        npm run build:mac
-        ;;
-    linux)
-        echo "构建 Linux 版本..."
-        npm run build:linux
-        ;;
-    all)
-        echo "构建所有平台版本..."
-        npm run build
+    onefile)
+        echo "打包为单文件格式..."
+        pyinstaller main.py --onefile --windowed \
+            --name hk-tool-desktop \
+            --add-data "renderer:renderer" \
+            --add-data "assets:assets" \
+            --hidden-import PySide6.QtWebEngineCore \
+            --hidden-import PySide6.QtWebEngineWidgets \
+            --distpath dist --clean
         ;;
     *)
-        echo -e "${RED}错误: 未知的平台 '$PLATFORM'${NC}"
-        echo "支持的平台: win, mac, linux, all"
+        echo -e "${RED}错误: 未知的打包模式 '$PLATFORM'${NC}"
+        echo "支持的模式: onedir, onefile"
         exit 1
         ;;
 esac
@@ -125,8 +197,6 @@ fi
 
 echo ""
 echo "使用说明:"
-echo "  - 运行开发模式: npm run dev"
-echo "  - 构建 Windows: ./build.sh win"
-echo "  - 构建 macOS:   ./build.sh mac"
-echo "  - 构建 Linux:   ./build.sh linux"
-echo "  - 构建全部:     ./build.sh all"
+echo "  - 运行开发模式: python3 main.py --dev"
+echo "  - 打包为目录:   ./build.sh onedir"
+echo "  - 打包为单文件: ./build.sh onefile"

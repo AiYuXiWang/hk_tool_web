@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# 环控平台维护工具 - 桌面版开发启动脚本
+# 环控平台维护工具 - 桌面版开发启动脚本（PySide6）
 
 set -e
 
@@ -78,18 +78,29 @@ start_frontend() {
     echo "  日志文件: desktop/frontend.log"
 }
 
-# 启动 Electron
-start_electron() {
-    echo -e "${BLUE}启动 Electron 桌面应用...${NC}"
+# 启动桌面应用
+start_desktop() {
+    echo -e "${BLUE}启动 PySide6 桌面应用...${NC}"
     cd ../desktop
     
-    if [ ! -d "node_modules" ]; then
-        echo "  安装桌面版依赖..."
-        npm install
+    # 检查 Python 虚拟环境
+    if [ ! -d "venv" ]; then
+        echo "  创建虚拟环境..."
+        python3 -m venv venv
     fi
     
-    # 前台启动 Electron（这样可以看到日志和关闭时能清理）
-    npm run dev
+    # 激活虚拟环境
+    source venv/bin/activate
+    
+    # 安装依赖
+    if [ ! -f "venv/.installed" ]; then
+        echo "  安装桌面版依赖..."
+        pip install -r requirements.txt
+        touch venv/.installed
+    fi
+    
+    # 启动桌面应用
+    python3 main.py --dev
 }
 
 # 清理函数
@@ -154,11 +165,12 @@ main() {
     echo "  - API 文档:  http://localhost:8000/docs"
     echo "  - 前端界面: http://localhost:5173"
     echo ""
+    echo "桌面应用使用 PySide6（Qt6）"
     echo "按 Ctrl+C 退出并清理所有进程"
     echo ""
     
-    # 启动 Electron
-    start_electron
+    # 启动桌面应用
+    start_desktop
 }
 
 # 执行主流程

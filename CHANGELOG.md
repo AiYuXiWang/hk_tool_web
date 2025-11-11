@@ -54,8 +54,8 @@
 
 ### 新增功能 ✨
 
-#### 桌面版应用
-- **技术栈**：Electron + Vue 3 + Element Plus
+#### 桌面版应用（技术栈已更新为 PySide6）
+- **技术栈**：PySide6 (Qt6) + Vue 3 + Element Plus
 - **功能**：与 Web 端完全一致，专注于数据导出和数据写值
 - **平台支持**：Windows、macOS、Linux
 - **特性**：
@@ -66,14 +66,14 @@
   - 📋 原生应用菜单
   - ⌨️ 快捷键支持
 
-#### 桌面版文件结构
+#### 桌面版文件结构（PySide6）
 ```
 desktop/
-├── main.js              # Electron 主进程
-├── preload.js           # 预加载脚本（安全 IPC）
-├── package.json         # 项目配置与依赖
+├── main.py              # 主应用入口（PySide6）
+├── dialogs.py           # 对话框模块
+├── requirements.txt     # Python 依赖
 ├── README.md            # 详细使用说明
-├── build.sh / .bat      # 构建脚本
+├── build.sh / .bat      # 构建脚本（PyInstaller）
 ├── start-dev.sh / .bat  # 开发启动脚本
 ├── assets/              # 应用图标资源
 │   ├── icon.png         # Linux 图标
@@ -82,26 +82,29 @@ desktop/
 └── .gitignore           # 桌面版忽略文件
 ```
 
-#### 桌面版功能
+#### 桌面版功能（PySide6）
 1. **配置管理**
    - API 基础 URL 配置
    - 窗口大小和位置记忆
    - 最后使用的线路和车站记忆
+   - JSON 文件持久化
 
 2. **文件操作**
-   - 选择保存路径对话框
+   - Qt 原生文件对话框
    - 文件保存（支持 Excel/CSV）
    - 文件选择对话框
 
-3. **API 请求**
-   - 通过 IPC 代理所有 API 请求
-   - 支持超时配置
-   - 错误处理
+3. **WebEngine 集成**
+   - QWebEngineView 嵌入前端页面
+   - 开发模式加载 Vite 服务器
+   - 生产模式加载本地文件
+   - JavaScript 控制台消息输出
 
 4. **用户界面**
+   - Qt 原生菜单栏
+   - 系统托盘图标
    - 消息对话框
-   - 系统通知
-   - 应用菜单（文件、编辑、视图、帮助）
+   - 设置对话框
 
 5. **快捷键**
    - `Ctrl/Cmd + E`: 打开数据导出
@@ -109,24 +112,25 @@ desktop/
    - `Ctrl/Cmd + Q`: 退出应用
    - `Ctrl/Cmd + ,`: 打开设置
    - `F11`: 切换全屏
-   - `Ctrl/Cmd + Shift + I`: 开发者工具
+   - `Ctrl/Cmd + Shift + I`: 开发者工具（需要额外配置）
 
-#### 构建脚本
-- **Linux/macOS**: `./build.sh [win|mac|linux|all]`
-- **Windows**: `build.bat [win|all]`
+#### 构建脚本（PyInstaller）
+- **Linux/macOS**: `./build.sh [onedir|onefile]`
+- **Windows**: `build.bat [onedir|onefile]`
 - 自动化流程：
-  1. 构建前端应用
-  2. 复制构建文件到桌面版
-  3. 安装桌面版依赖
-  4. 打包为可执行文件
+  1. 构建前端应用（Vue + Vite）
+  2. 复制构建文件到桌面版 renderer 目录
+  3. 创建 Python 虚拟环境并安装依赖
+  4. 使用 PyInstaller 打包为可执行文件
 
-#### 开发启动脚本
+#### 开发启动脚本（PySide6）
 - **Linux/macOS**: `./start-dev.sh`
 - **Windows**: `start-dev.bat`
 - 功能：
-  - 自动检查并启动后端服务
-  - 自动检查并启动前端开发服务器
-  - 启动 Electron 桌面应用
+  - 自动检查并启动后端服务（FastAPI）
+  - 自动检查并启动前端开发服务器（Vite）
+  - 创建 Python 虚拟环境并安装依赖
+  - 启动 PySide6 桌面应用
   - 退出时自动清理所有进程
 
 ### 改进 🔧
@@ -189,13 +193,14 @@ build.bat all   # Windows
 
 ### 技术栈更新
 
-#### 新增依赖
-- `electron`: ^27.0.0 - 桌面应用框架
-- `electron-builder`: ^24.6.4 - 打包工具
-- `electron-store`: ^8.1.0 - 配置存储
+#### 新增依赖（桌面版）
+- `PySide6`: >=6.6.0 - Qt6 的 Python 绑定
+- `PySide6-WebEngine`: >=6.6.0 - Qt WebEngine 支持
+- `pyinstaller`: 用于打包 Python 应用
 
 #### 移除依赖
 - 所有能源驾驶舱相关的前后端依赖
+- Electron 相关依赖（已改用 PySide6）
 
 ### 破坏性变更 ⚠️
 
