@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+*.egg-info/
+dist/
+build/
+*.spec
+
+# Build output
+renderer/
+
+# Logs
+logs/
+*.log
+backend.log
+frontend.log
+*.pid
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.vscode/
+
+# Configuration
+config.json
+
+# Temporary files
+temp/
+tmp/
+*.tmp
+
+# PyInstaller
+*.manifest
+*.spec

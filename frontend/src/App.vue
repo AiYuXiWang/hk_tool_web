@@ -39,14 +39,6 @@
             </span>
           </template>
         </el-tab-pane>
-        <el-tab-pane name="cockpit">
-          <template #label>
-            <span class="tab-label">
-              <el-icon><DataAnalysis /></el-icon>
-              能源驾驶舱
-            </span>
-          </template>
-        </el-tab-pane>
         <el-tab-pane name="export">
           <template #label>
             <span class="tab-label">
@@ -409,11 +401,6 @@
       <div v-show="activeTab === 'export'" class="export-page">
         <DataExport />
       </div>
-
-      <!-- 能源驾驶舱页面 -->
-      <div v-show="activeTab === 'cockpit'" class="export-page">
-        <EnergyCockpit />
-      </div>
     </main>
 
     <!-- 批量写值对话框 -->
@@ -522,9 +509,8 @@ import {
 } from '@element-plus/icons-vue'
 import { fetchRealtimeValue, batchWritePoints, fetchDeviceTree, getSeverityColor, fetchLineConfigs, exportElectricityData, exportSensorData, fetchDefaultPoints, setStationIp } from './api/control'
 import DataExport from './views/DataExport.vue'
-import EnergyCockpit from './views/EnergyCockpit.vue'
 
-const activeTab = ref('cockpit')
+const activeTab = ref('device')
 const operatorId = ref('web-admin')
 const isDarkTheme = ref(false)
 const sidebarCollapsed = ref(false)
